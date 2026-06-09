@@ -26,6 +26,10 @@ export default function SessionRecorder() {
   const [copied, setCopied] = useState(false);
   const intervalRef = useRef(null);
 
+  // Live Web Speech transcription
+  const [transcriptionText, setTranscriptionText] = useState('');
+  const recognitionRef = useRef(null);
+
   // Clinical & Functional Metrics States
   const [rom, setRom] = useState(120);
   const [strength, setStrength] = useState(4);
@@ -83,6 +87,59 @@ export default function SessionRecorder() {
     return () => clearInterval(intervalRef.current);
   }, [isRecording, isPaused]);
 
+  useEffect(() => {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) return;
+
+    if (isRecording && !isPaused) {
+      if (!recognitionRef.current) {
+        const rec = new Recognition();
+        rec.lang = 'he-IL';
+        rec.continuous = true;
+        rec.interimResults = true;
+
+        rec.onresult = (event) => {
+          let finalTranscript = '';
+          let interimTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript + ' ';
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
+          }
+          setTranscriptionText(prev => {
+            return finalTranscript || interimTranscript ? (finalTranscript + interimTranscript) : prev;
+          });
+        };
+
+        rec.onerror = (e) => {
+          console.error('Speech recognition error:', e);
+        };
+
+        recognitionRef.current = rec;
+      }
+
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        // Already started
+      }
+    } else {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (err) {
+          // Already stopped
+        }
+      }
+    }
+
+    return () => {
+      // Cleanup on unmount
+    };
+  }, [isRecording, isPaused]);
+
   // Set default values based on patient
   useEffect(() => {
     if (selectedPatient) {
@@ -118,6 +175,7 @@ export default function SessionRecorder() {
 
   const handleConsentAccept = () => {
     setShowConsent(false);
+    setTranscriptionText('');
     setStep('recording');
     setIsRecording(true);
   };
@@ -130,10 +188,39 @@ export default function SessionRecorder() {
   const handleStopRecording = async () => {
     setIsRecording(false);
     setIsPaused(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    }
     setStep('processing');
 
-    const result = await simulateTranscription();
-    setSummary(result.summary);
+    // Simulate AI processing delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    if (transcriptionText.trim()) {
+      const formattedSummary = `סיכום ביקור פיזיותרפיה (תמלול קולי)
+
+מטופל: ${selectedPatient?.name || 'פיילוט'}
+תאריך הטיפול: ${new Date().toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}
+אופן התיעוד: הקלטת קול ותמלול אוטומטי בזמן אמת
+
+סיכום המפגש הקליני:
+"${transcriptionText.trim()}"
+
+הערות והנחיות המשך:
+המדדים עודכנו בהצלחה במערכת בהתאם לקביעת הפיזיותרפיסט.`;
+      setSummary(formattedSummary);
+    } else {
+      const result = await simulateTranscription();
+      // Customize the mock result to show the selected patient name rather than Yuval/Michal!
+      const customizedSummary = result.summary
+        .replace(/יובל כהן/g, selectedPatient?.name || 'יובל כהן')
+        .replace(/מיכל לוי/g, selectedPatient?.name || 'מיכל לוי')
+        .replace(/אלון ברק/g, selectedPatient?.name || 'אלון ברק');
+      setSummary(customizedSummary);
+    }
+    
     setStep('result');
   };
 
@@ -319,6 +406,31 @@ export default function SessionRecorder() {
             <p className="text-xs text-muted mt-6">
               לחץ על הכפתור האדום לסיום ההקלטה ויצירת סיכום אוטומטי
             </p>
+
+            {/* Real-time transcription preview */}
+            {transcriptionText && (
+              <div 
+                style={{ 
+                  background: 'rgba(255, 255, 255, 0.03)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 'var(--radius-lg)', 
+                  padding: 'var(--space-3)', 
+                  marginTop: 'var(--space-5)', 
+                  textAlign: 'right',
+                  maxHeight: '120px',
+                  overflowY: 'auto',
+                  fontSize: '13px',
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                  direction: 'rtl'
+                }}
+              >
+                <div className="font-bold text-xs text-muted mb-1" style={{ color: 'var(--color-primary-light)' }}>
+                  🎙️ תמלול בזמן אמת (דיבור לקול):
+                </div>
+                <div>{transcriptionText}</div>
+              </div>
+            )}
           </div>
         </div>
       )}

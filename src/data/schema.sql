@@ -162,8 +162,30 @@ CREATE POLICY "Therapists can view all media uploads"
 
 
 -- 6. STORAGE BUCKET CONFIGURATION FOR VIDEO UPLOADS
--- Run these commands or manually create a bucket named 'patient-media' in Supabase dashboard
--- with 'Public' access or appropriate RLS rules.
---
--- To allow uploads to public 'patient-media' bucket:
--- INSERT INTO storage.buckets (id, name, public) VALUES ('patient-media', 'patient-media', true);
+-- Create the bucket if it doesn't exist
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('patient-media', 'patient-media', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Enable RLS on storage.objects
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read access to objects in 'patient-media'
+CREATE POLICY "Allow public select on patient-media" 
+ON storage.objects FOR SELECT 
+USING (bucket_id = 'patient-media');
+
+-- Allow public insert access to upload files to 'patient-media'
+CREATE POLICY "Allow public insert to patient-media" 
+ON storage.objects FOR INSERT 
+WITH CHECK (bucket_id = 'patient-media');
+
+-- Allow public update access to files in 'patient-media'
+CREATE POLICY "Allow public update on patient-media" 
+ON storage.objects FOR UPDATE 
+USING (bucket_id = 'patient-media');
+
+-- Allow public delete access to files in 'patient-media'
+CREATE POLICY "Allow public delete from patient-media" 
+ON storage.objects FOR DELETE 
+USING (bucket_id = 'patient-media');
