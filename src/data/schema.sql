@@ -167,8 +167,6 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('patient-media', 'patient-media', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Enable RLS on storage.objects
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read access to objects in 'patient-media'
 CREATE POLICY "Allow public select on patient-media" 
