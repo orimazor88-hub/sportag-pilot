@@ -1,0 +1,1001 @@
+// === Patient Profile Page ===
+import { useParams, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { mockPatients, mockSessions, mockExercises, mockJournalEntries } from '../../data/mockData';
+import { ExerciseCard } from '../../components/SharedComponents';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import {
+  ArrowRight, Calendar, FileText, Dumbbell, TrendingUp,
+  Clock, Activity, Brain, ChevronLeft, Target, Sliders,
+  Camera, Image, Video, MessageSquare, X, Play
+} from 'lucide-react';
+
+export default function PatientProfile() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('overview');
+  const { uploads } = useAuth();
+  const [activeMedia, setActiveMedia] = useState(null);
+
+  // Helper to determine media source URL for therapist view
+  const getMediaSrc = (file) => {
+    if (file.previewUrl) return file.previewUrl;
+    if (file.persistedUrl) return file.persistedUrl;
+    
+    // Fallbacks for default mock data
+    if (file.id === 1 || file.id === 3) {
+      return 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=600&q=80';
+    }
+    if (file.id === 2) {
+      return 'https://www.w3schools.com/html/mov_bbb.mp4';
+    }
+    return '';
+  };
+
+  const renderThumbnail = (file) => {
+    const src = getMediaSrc(file);
+    
+    if (file.type === 'image') {
+      return (
+        <img 
+          src={src} 
+          alt={file.name} 
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+          onError={(e) => {
+            e.target.style.display = 'none';
+            e.target.parentNode.style.background = 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
+          }}
+        />
+      );
+    } else {
+      if (file.thumbnailUrl) {
+        return (
+          <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <img 
+              src={file.thumbnailUrl} 
+              alt={file.name} 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+            />
+            <div style={{
+              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <Play size={24} style={{ color: 'white' }} />
+            </div>
+          </div>
+        );
+      }
+
+      const videoSrc = src.startsWith('blob:') ? src : `${src}#t=0.1`;
+      return (
+        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+          <video 
+            src={videoSrc} 
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+            preload="auto"
+            muted 
+            playsInline
+          />
+          <div style={{
+            position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Play size={24} style={{ color: 'white' }} />
+          </div>
+        </div>
+      );
+    }
+  };
+
+  const patient = mockPatients.find(p => p.id === id);
+  const sessions = mockSessions.filter(s => s.patientId === id);
+  const exercises = mockExercises.slice(0, 3);
+
+  // Edit targets states
+  const [editedTargets, setEditedTargets] = useState(null);
+  const [editedInitialPain, setEditedInitialPain] = useState(null);
+  const [editedFirstMetric, setEditedFirstMetric] = useState(null);
+  const [editedTargetDate, setEditedTargetDate] = useState(null);
+  const [editedStrengthMuscle, setEditedStrengthMuscle] = useState(null);
+
+  if (!patient) {
+    return (
+      <div className="empty-state">
+        <h3>מטופל לא נמצא</h3>
+        <button className="btn btn-primary mt-4" onClick={() => navigate('/therapist/patients')}>
+          חזרה לרשימה
+        </button>
+      </div>
+    );
+  }
+
+  // --- Dynamic Progress & Goals Calculations ---
+  const targets = patient.targets || {
+    painLevel: { intermediate: 3, final: 0 },
+    rom: { intermediate: 130, final: 140 },
+    strength: { intermediate: 4, final: 5 }
+  };
+  const initialPain = patient.initialPainLevel || 8;
+
+  const latestMetric = patient.metricsHistory && patient.metricsHistory.length > 0
+    ? patient.metricsHistory[patient.metricsHistory.length - 1]
+    : null;
+  const firstMetric = patient.metricsHistory && patient.metricsHistory.length > 0
+    ? patient.metricsHistory[0]
+    : null;
+
+  const calcMetricProgress = (current, initial, target) => {
+    if (initial === undefined || current === undefined || target === undefined || initial === target) return 100;
+    const progress = ((current - initial) / (target - initial)) * 100;
+    return Math.min(100, Math.max(0, Math.round(progress)));
+  };
+
+  const calcPainProgress = (current, initial, target) => {
+    if (initial === undefined || current === undefined || target === undefined || initial === target) return 100;
+    const progress = ((initial - current) / (initial - target)) * 100;
+    return Math.min(100, Math.max(0, Math.round(progress)));
+  };
+
+  const activeMetrics = [];
+  const currentPainVal = patient.painLevel;
+  const initPainVal = initialPain;
+  const painTarget = targets.painLevel?.intermediate ?? 3;
+
+  activeMetrics.push({
+    name: 'כאב (VAS)',
+    current: currentPainVal,
+    initial: initPainVal,
+    target: painTarget,
+    progress: calcPainProgress(currentPainVal, initPainVal, painTarget),
+    key: 'pain'
+  });
+
+  const currentRom = latestMetric?.rom || 120;
+  const initRom = firstMetric?.rom || 110;
+  const romTarget = targets.rom?.intermediate ?? 130;
+
+  activeMetrics.push({
+    name: 'טווח תנועה (ROM)',
+    current: currentRom,
+    initial: initRom,
+    target: romTarget,
+    progress: calcMetricProgress(currentRom, initRom, romTarget),
+    key: 'rom'
+  });
+
+  const currentStr = latestMetric?.strength || 3;
+  const initStr = firstMetric?.strength || 3;
+  const strTarget = targets.strength?.intermediate ?? 4.5;
+
+  activeMetrics.push({
+    name: `כוח שריר (${targets.strength?.muscle || 'כללי'})`,
+    current: currentStr,
+    initial: initStr,
+    target: strTarget,
+    progress: calcMetricProgress(currentStr, initStr, strTarget),
+    key: 'strength'
+  });
+
+  if (patient.isLowerLimb) {
+    const currentWalk = latestMetric?.walking || 5;
+    const initWalk = firstMetric?.walking || 5;
+    const walkTarget = targets.walking?.intermediate ?? 8;
+    activeMetrics.push({
+      name: 'הליכה',
+      current: currentWalk,
+      initial: initWalk,
+      target: walkTarget,
+      progress: calcMetricProgress(currentWalk, initWalk, walkTarget),
+      key: 'walking'
+    });
+
+    const currentStairs = latestMetric?.stairs || 4;
+    const initStairs = firstMetric?.stairs || 4;
+    const stairsTarget = targets.stairs?.intermediate ?? 8;
+    activeMetrics.push({
+      name: 'מדרגות',
+      current: currentStairs,
+      initial: initStairs,
+      target: stairsTarget,
+      progress: calcMetricProgress(currentStairs, initStairs, stairsTarget),
+      key: 'stairs'
+    });
+
+    const currentRun = latestMetric?.running || 2;
+    const initRun = firstMetric?.running || 2;
+    const runTarget = targets.running?.intermediate ?? 6;
+    activeMetrics.push({
+      name: 'ריצה',
+      current: currentRun,
+      initial: initRun,
+      target: runTarget,
+      progress: calcMetricProgress(currentRun, initRun, runTarget),
+      key: 'running'
+    });
+  }
+
+  // Compliance (Exercises Completed)
+  const complianceDays = mockJournalEntries.filter(e => e.exercisesCompleted).length;
+  const totalJournalDays = mockJournalEntries.length;
+  const complianceScore = totalJournalDays > 0 ? Math.round((complianceDays / totalJournalDays) * 100) : 0;
+
+  const avgProgress = activeMetrics.length > 0
+    ? Math.round(activeMetrics.reduce((sum, m) => sum + m.progress, 0) / activeMetrics.length)
+    : 0;
+
+  const getStatus = (metric) => {
+    const { current, initial, target, key } = metric;
+    if (key === 'pain') {
+      if (current <= target) return { label: 'יעד הושג', badgeClass: 'badge-success', dot: '🟢' };
+      if (current < initial) return { label: 'בשיפור', badgeClass: 'badge-warning', dot: '🟡' };
+      return { label: 'ללא שיפור', badgeClass: 'badge-danger', dot: '🔴' };
+    } else {
+      if (current >= target) return { label: 'יעד הושג', badgeClass: 'badge-success', dot: '🟢' };
+      if (current > initial) return { label: 'בשיפור', badgeClass: 'badge-warning', dot: '🟡' };
+      return { label: 'ללא שיפור', badgeClass: 'badge-danger', dot: '🔴' };
+    }
+  };
+
+  // Pain trend data
+  const painData = mockJournalEntries.slice(0, 14).reverse().map(entry => ({
+    date: entry.date.slice(5),
+    pain: entry.painLevel,
+    energy: entry.energy,
+  }));
+
+  // Clinical & Functional Metrics Data
+  const metricsData = patient.metricsHistory?.map(m => ({
+    date: new Date(m.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' }),
+    rom: m.rom,
+    strength: m.strength,
+    walking: m.walking,
+    stairs: m.stairs,
+    running: m.running,
+  })) || [];
+
+  // Wearable Device Synced Data
+  const syncedEntries = mockJournalEntries.filter(e => e.deviceSynced);
+  const avgSteps = syncedEntries.length ? Math.round(syncedEntries.reduce((acc, e) => acc + (e.stepsCount || 0), 0) / syncedEntries.length) : 0;
+  const avgDistance = syncedEntries.length ? (syncedEntries.reduce((acc, e) => acc + (e.distanceKm || 0), 0) / syncedEntries.length).toFixed(1) : 0;
+  const deviceType = syncedEntries.find(e => e.deviceType)?.deviceType === 'garmin' ? 'Garmin Fenix 7' : 'Apple Watch / iPhone';
+
+  const tabs = [
+    { id: 'overview', label: 'סקירה', icon: Activity },
+    { id: 'sessions', label: 'טיפולים', icon: FileText },
+    { id: 'exercises', label: 'תרגילים', icon: Dumbbell },
+    { id: 'journal', label: 'מעקב יומי', icon: TrendingUp },
+    { id: 'media', label: 'מדיה', icon: Camera },
+    { id: 'targets', label: 'הגדרת יעדים', icon: Target }
+  ];
+
+  const handleTabChange = (tabId) => {
+    if (tabId === 'targets') {
+      setEditedTargets(JSON.parse(JSON.stringify(targets)));
+      setEditedInitialPain(initialPain);
+      setEditedTargetDate(targets.targetDate || '2026-06-20');
+      setEditedStrengthMuscle(targets.strength?.muscle || 'ארבע ראשי');
+      setEditedFirstMetric(JSON.parse(JSON.stringify(firstMetric || {
+        rom: 110,
+        strength: 3,
+        walking: 5,
+        stairs: 4,
+        running: 2
+      })));
+    }
+    setActiveTab(tabId);
+  };
+
+  const handleSaveTargets = (e) => {
+    e.preventDefault();
+    patient.targets = {
+      ...editedTargets,
+      targetDate: editedTargetDate,
+      strength: { ...editedTargets.strength, muscle: editedStrengthMuscle }
+    };
+    patient.initialPainLevel = editedInitialPain;
+    if (patient.metricsHistory && patient.metricsHistory.length > 0) {
+      patient.metricsHistory[0] = {
+        ...patient.metricsHistory[0],
+        rom: Number(editedFirstMetric.rom),
+        strength: Number(editedFirstMetric.strength),
+        ...(patient.isLowerLimb ? {
+          walking: Number(editedFirstMetric.walking),
+          stairs: Number(editedFirstMetric.stairs),
+          running: Number(editedFirstMetric.running),
+        } : {})
+      };
+    }
+    // Update current patient values if baseline was edited to be above current
+    if (patient.painLevel > editedInitialPain) {
+      patient.painLevel = editedInitialPain;
+    }
+    alert('היעדים עודכנו בהצלחה במערכת!');
+    setActiveTab('overview');
+  };
+
+  return (
+    <div>
+      {/* Back button */}
+      <button
+        className="btn btn-ghost btn-sm mb-4"
+        onClick={() => navigate('/therapist/patients')}
+      >
+        <ArrowRight size={18} />
+        חזרה לרשימה
+      </button>
+
+      {/* Patient Header */}
+      <div className="glass-card mb-6 animate-fade-in-up">
+        <div className="flex items-center gap-4">
+          <div className="avatar avatar-xl" style={{ background: patient.avatarBg, fontSize: '2rem' }}>
+            {patient.avatar}
+          </div>
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold">{patient.name}</h1>
+            <p className="text-secondary">{patient.conditionHe}</p>
+            <p className="text-xs text-muted mt-1">{patient.condition}</p>
+            <div className="flex gap-2 mt-2 flex-wrap">
+              <span className="badge" style={{ background: `${patient.areaColor}20`, color: patient.areaColor }}>
+                {patient.area}
+              </span>
+              <span className="badge badge-primary">{patient.sport}</span>
+              <span className="badge badge-success">VAS: {patient.painLevel}/10</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Dynamic Target Progress Track */}
+        <div className="mt-4 border-t pt-4 border-color">
+          <div>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-secondary font-medium">התקדמות ליעד ({targets.targetDate ? `יעד ל-${new Date(targets.targetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric', year: 'numeric'})}` : 'פגישה הבאה'})</span>
+              <span className="font-bold" style={{ color: '#06B6D4' }}>{avgProgress}%</span>
+            </div>
+            <div className="progress-bar" style={{ height: 6 }}>
+              <div className="progress-fill" style={{ width: `${avgProgress}%`, background: 'linear-gradient(90deg, var(--color-primary) 0%, var(--color-teal) 100%)' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Info */}
+        <div className="grid-3 mt-4 pt-4 border-t border-color" style={{ gap: 'var(--space-3)' }}>
+          <div className="text-center">
+            <div className="text-2xl font-bold" style={{ color: 'var(--color-primary-light)' }}>
+              {patient.sessionsCount}
+            </div>
+            <div className="text-xs text-secondary">טיפולים</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold" style={{ color: 'var(--color-teal-light)' }}>
+              {patient.age}
+            </div>
+            <div className="text-xs text-secondary">גיל</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold" style={{ color: 'var(--color-accent-light)' }}>
+              {Math.max(1, Math.round((new Date() - new Date(patient.startDate)) / (1000 * 60 * 60 * 24 * 7)))}
+            </div>
+            <div className="text-xs text-secondary">שבועות טיפול</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="tabs mb-6">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => handleTabChange(tab.id)}
+          >
+            <tab.icon size={14} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: 4 }} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <div className="animate-fade-in">
+          {/* Dynamic Progress Cards */}
+          <div className="grid-2 mb-6 animate-fade-in-up" style={{ gap: 'var(--space-4)' }}>
+            <div className="card text-center" style={{ border: '1px solid rgba(16, 185, 129, 0.2)', background: 'rgba(16, 185, 129, 0.02)' }}>
+              <div className="text-sm font-semibold text-secondary mb-2">התמדה בתרגול (Compliance)</div>
+              <div className="text-3xl font-extrabold" style={{ color: '#10B981' }}>{complianceScore}%</div>
+              <div className="text-xs text-muted mt-2">ביצוע תוכנית תרגילים ביתית</div>
+            </div>
+            <div className="card text-center" style={{ border: '1px solid rgba(6, 182, 212, 0.2)', background: 'rgba(6, 182, 212, 0.02)' }}>
+              <div className="text-sm font-semibold text-secondary mb-2">יעד ({targets.targetDate ? `עד ל-${new Date(targets.targetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric', year: 'numeric'})}` : 'פגישה הבאה'})</div>
+              <div className="text-3xl font-extrabold" style={{ color: '#06B6D4' }}>{avgProgress}%</div>
+              <div className="text-xs text-muted mt-2">מטרות השיקום כפי שהוגדרו על ידי המטפל</div>
+            </div>
+          </div>
+
+          {/* Clinical Metrics Comparison Table */}
+          <div className="card mb-6 animate-fade-in-up stagger-1">
+            <h3 className="section-title">השוואת מדדים קליניים מול יעדים מוגדרים</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="w-full text-sm" style={{ borderCollapse: 'collapse', textAlign: 'right' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: 'var(--space-2) var(--space-3)' }}>מדד קליני</th>
+                    <th style={{ padding: 'var(--space-2) var(--space-3)' }}>ערך בסיס</th>
+                    <th style={{ padding: 'var(--space-2) var(--space-3)' }}>ערך נוכחי</th>
+                    <th style={{ padding: 'var(--space-2) var(--space-3)' }}>
+                      יעד ({targets.targetDate ? `עד ל-${new Date(targets.targetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric', year: 'numeric'})}` : 'פגישה הבאה'})
+                    </th>
+                    <th style={{ padding: 'var(--space-2) var(--space-3)' }}>סטטוס</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeMetrics.map((m, idx) => {
+                    const status = getStatus(m);
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: 'var(--space-3)', fontWeight: 600 }}>{m.name}</td>
+                        <td style={{ padding: 'var(--space-3)' }}>{m.initial}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
+                        <td style={{ padding: 'var(--space-3)', color: 'var(--text-primary)', fontWeight: 600 }}>{m.current}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
+                        <td style={{ padding: 'var(--space-3)', color: '#06B6D4' }}>{m.target}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
+                        <td style={{ padding: 'var(--space-3)' }}>
+                          <span className={`badge ${status.badgeClass}`}>
+                            <span style={{ marginLeft: 4 }}>{status.dot}</span>
+                            <span>{status.label}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pain Chart */}
+          <div className="card mb-4 animate-fade-in-up stagger-2">
+            <h3 className="section-title">מגמת כאב (14 ימים)</h3>
+            <div style={{ width: '100%', height: 200 }}>
+              <ResponsiveContainer>
+                <AreaChart data={painData}>
+                  <defs>
+                    <linearGradient id="painGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#E22279" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#E22279" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={11} />
+                  <YAxis domain={[0, 10]} stroke="var(--text-tertiary)" fontSize={11} />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 8,
+                      color: 'var(--text-primary)',
+                      direction: 'rtl',
+                    }}
+                  />
+                  <Area type="monotone" dataKey="pain" stroke="#E22279" fill="url(#painGrad)" strokeWidth={2} name="דרגת כאב" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Clinical Metrics Graphs */}
+          {metricsData.length > 0 && (
+            <div className="grid-2 mb-4 animate-fade-in-up stagger-2">
+              {/* ROM Chart */}
+              <div className="card">
+                <h3 className="section-title text-sm" style={{ color: '#06B6D4' }}>טווח תנועה (ROM)</h3>
+                <div style={{ width: '100%', height: 160 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={metricsData}>
+                      <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={10} />
+                      <YAxis domain={['auto', 'auto']} stroke="var(--text-tertiary)" fontSize={10} unit="°" />
+                      <Tooltip
+                        contentStyle={{
+                          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                          borderRadius: 8, color: 'var(--text-primary)', direction: 'rtl',
+                        }}
+                      />
+                      <Line type="monotone" dataKey="rom" stroke="#06B6D4" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name="ROM" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Muscle Strength Chart */}
+              <div className="card">
+                <h3 className="section-title text-sm" style={{ color: '#8B5CF6' }}>כוח שריר (MRC)</h3>
+                <div style={{ width: '100%', height: 160 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={metricsData}>
+                      <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={10} />
+                      <YAxis domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} stroke="var(--text-tertiary)" fontSize={10} />
+                      <Tooltip
+                        contentStyle={{
+                          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                          borderRadius: 8, color: 'var(--text-primary)', direction: 'rtl',
+                        }}
+                      />
+                      <Line type="monotone" dataKey="strength" stroke="#8B5CF6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name="כוח שריר" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Lower Limb Functional Progress Chart */}
+          {patient.isLowerLimb && metricsData.length > 0 && (
+            <div className="card mb-4 animate-fade-in-up stagger-2">
+              <h3 className="section-title" style={{ color: '#10B981' }}>מדדי תפקוד גפה תחתונה (0-10)</h3>
+              <div style={{ width: '100%', height: 180 }}>
+                <ResponsiveContainer>
+                  <LineChart data={metricsData}>
+                    <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={10} />
+                    <YAxis domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} stroke="var(--text-tertiary)" fontSize={10} />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                        borderRadius: 8, color: 'var(--text-primary)', direction: 'rtl',
+                      }}
+                    />
+                    <Line type="monotone" dataKey="walking" stroke="#10B981" strokeWidth={2} name="הליכה" />
+                    <Line type="monotone" dataKey="stairs" stroke="#F59E0B" strokeWidth={2} name="מדרגות" />
+                    <Line type="monotone" dataKey="running" stroke="#EC4899" strokeWidth={2} name="ריצה" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex justify-center gap-6 mt-2 text-xs">
+                <span style={{ color: '#10B981' }}>● הליכה</span>
+                <span style={{ color: '#F59E0B' }}>● מדרגות</span>
+                <span style={{ color: '#EC4899' }}>● ריצה</span>
+              </div>
+            </div>
+          )}
+
+          {/* Garmin / Wearable Sync Card */}
+          {patient.id === 'p1' && avgSteps > 0 && (
+            <div className="card mb-4 animate-fade-in-up stagger-2" style={{ border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.03)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="section-title mb-0 flex items-center gap-2" style={{ color: '#F59E0B' }}>
+                  <span>⌚ נתוני שעון מסונכרנים ({deviceType})</span>
+                </h3>
+                <span className="badge badge-success text-xs">✓ מחובר</span>
+              </div>
+              <div className="grid-2 text-center" style={{ gap: 'var(--space-2)' }}>
+                <div style={{ background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}>
+                  <div className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {avgSteps.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-secondary">ממוצע צעדים יומי</div>
+                </div>
+                <div style={{ background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}>
+                  <div className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {avgDistance} ק״מ
+                  </div>
+                  <div className="text-xs text-secondary">ממוצע מרחק ריצה שבועי</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div className="card animate-fade-in-up stagger-2">
+            <h3 className="section-title">הערות מטפל</h3>
+            <p className="text-sm text-secondary" style={{ lineHeight: 1.8 }}>{patient.notes}</p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'sessions' && (
+        <div className="animate-fade-in">
+          {sessions.length > 0 ? sessions.map((session, i) => (
+            <div key={session.id} className="card mb-4" style={{ animationDelay: `${i * 80}ms` }}>
+              <div className="flex justify-between items-center mb-3">
+                <div className="flex items-center gap-2">
+                  <Calendar size={16} style={{ color: 'var(--color-primary-light)' }} />
+                  <span className="font-semibold text-sm">
+                    {new Date(session.date).toLocaleDateString('he-IL')}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock size={14} style={{ color: 'var(--text-tertiary)' }} />
+                  <span className="text-xs text-secondary">{session.duration} דקות</span>
+                  <span className="badge badge-primary">{session.type}</span>
+                </div>
+              </div>
+              <pre className="session-summary">{session.summary}</pre>
+            </div>
+          )) : (
+            <div className="empty-state">
+              <FileText size={48} />
+              <h3 className="mt-4">אין סיכומי טיפולים</h3>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'exercises' && (
+        <div className="animate-fade-in">
+          <div className="flex flex-col gap-3">
+            {exercises.map(ex => (
+              <ExerciseCard key={ex.id} exercise={ex} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'journal' && (
+        <div className="animate-fade-in">
+          {mockJournalEntries.slice(0, 7).map((entry, i) => (
+            <div key={entry.date} className="card card-compact mb-3" style={{ animationDelay: `${i * 60}ms` }}>
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-sm">
+                  {new Date(entry.date).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                </span>
+                <div className="flex gap-2">
+                  <span className="badge" style={{
+                    background: entry.painLevel <= 3 ? 'rgba(16,185,129,0.2)' : entry.painLevel <= 6 ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)',
+                    color: entry.painLevel <= 3 ? '#10B981' : entry.painLevel <= 6 ? '#F59E0B' : '#EF4444',
+                  }}>
+                    VAS: {entry.painLevel}
+                  </span>
+                  {entry.exercisesCompleted && (
+                    <span className="badge badge-success">✓ תרגילים</span>
+                  )}
+                </div>
+              </div>
+              <div className="text-xs text-secondary mt-2">
+                <strong>פעילות:</strong> {entry.activity}
+              </div>
+              {entry.notes && (
+                <div className="text-xs text-muted mt-1">{entry.notes}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'media' && (
+        <div className="animate-fade-in">
+          {uploads && uploads.length > 0 ? (
+            <div 
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', 
+                gap: 'var(--space-4)',
+                direction: 'rtl'
+              }}
+            >
+              {uploads.map((file) => (
+                <div
+                  key={file.id}
+                  className="card card-compact card-hover"
+                  onClick={() => setActiveMedia(file)}
+                  style={{ 
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: 0,
+                    overflow: 'hidden',
+                    height: '220px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {/* Thumbnail Box */}
+                  <div style={{ width: '100%', height: '120px', overflow: 'hidden', position: 'relative', background: 'var(--bg-tertiary)' }}>
+                    {renderThumbnail(file)}
+                    
+                    {/* Type Badge */}
+                    <span className="badge" style={{
+                      position: 'absolute',
+                      bottom: 'var(--space-2)',
+                      left: 'var(--space-2)',
+                      background: file.type === 'image' ? 'rgba(8,145,178,0.9)' : 'rgba(139,92,246,0.9)',
+                      color: 'white',
+                      fontSize: '10px',
+                      padding: '2px 6px',
+                      zIndex: 1
+                    }}>
+                      {file.type === 'image' ? 'תמונה' : 'וידאו'}
+                    </span>
+                  </div>
+
+                  {/* Info details */}
+                  <div style={{ padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="font-semibold text-xs truncate" style={{ color: 'var(--text-primary)' }}>{file.title || file.name}</div>
+                      {file.note && (
+                        <div className="text-secondary truncate mt-1" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <MessageSquare size={10} style={{ flexShrink: 0 }} />
+                          <span className="truncate">{file.note}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-muted text-right" style={{ fontSize: '10px', borderTop: '1px solid var(--border-color)', paddingTop: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                      {new Date(file.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state py-8">
+              <Camera size={48} />
+              <p className="text-sm text-secondary mt-4">המטופל לא העלה קבצי מדיה עדיין</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Goal Settings Tab */}
+      {activeTab === 'targets' && editedTargets && (
+        <form onSubmit={handleSaveTargets} className="card animate-fade-in flex flex-col gap-6">
+          <h3 className="section-title flex items-center gap-2" style={{ color: 'var(--color-primary-light)' }}>
+            <Sliders size={20} />
+            <span>עריכת מדדי בסיס ויעדים קליניים</span>
+          </h3>
+
+          <div className="input-group mb-4 mt-3">
+            <label className="input-label">תאריך יעד להשגת יעדי הביניים</label>
+            <input type="date" className="input" value={editedTargetDate || ''} onChange={e => setEditedTargetDate(e.target.value)} />
+          </div>
+
+          {/* Pain Level VAS */}
+          <div className="p-4 rounded-lg border border-color" style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
+            <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-accent-light)' }}>רמת כאב (VAS 0-10)</h4>
+            <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+              <div className="input-group">
+                <label className="input-label">כאב התחלתי ({editedInitialPain})</label>
+                <input type="range" min="0" max="10" step="1" className="w-full" value={editedInitialPain} onChange={e => setEditedInitialPain(Number(e.target.value))} />
+              </div>
+              <div className="input-group">
+                <label className="input-label">יעד כאב ({editedTargets.painLevel?.intermediate}) {editedTargetDate ? `עד ל-${new Date(editedTargetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric'})}` : ''}</label>
+                <input type="range" min="0" max="10" step="1" className="w-full" value={editedTargets.painLevel?.intermediate ?? 3} 
+                  onChange={e => setEditedTargets({
+                    ...editedTargets,
+                    painLevel: { ...editedTargets.painLevel, intermediate: Number(e.target.value), final: Number(e.target.value) }
+                  })} />
+              </div>
+            </div>
+          </div>
+
+          {/* ROM */}
+          <div className="p-4 rounded-lg border border-color" style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
+            <h4 className="text-sm font-semibold mb-3 text-teal-light" style={{ color: 'var(--color-teal-light)' }}>טווח תנועה (ROM מעלות)</h4>
+            <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+              <div className="input-group">
+                <label className="input-label">ROM התחלתי (מעלות)</label>
+                <input type="number" className="input" value={editedFirstMetric.rom || 110} 
+                  onChange={e => setEditedFirstMetric({
+                    ...editedFirstMetric,
+                    rom: Number(e.target.value)
+                  })} />
+              </div>
+              <div className="input-group">
+                <label className="input-label">יעד ROM (מעלות) {editedTargetDate ? `עד ל-${new Date(editedTargetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric'})}` : ''}</label>
+                <input type="number" className="input" value={editedTargets.rom?.intermediate ?? 130} 
+                  onChange={e => setEditedTargets({
+                    ...editedTargets,
+                    rom: { ...editedTargets.rom, intermediate: Number(e.target.value), final: Number(e.target.value) }
+                  })} />
+              </div>
+            </div>
+          </div>
+
+          {/* Muscle Strength MRC */}
+          <div className="p-4 rounded-lg border border-color" style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
+            <h4 className="text-sm font-semibold mb-3" style={{ color: '#8B5CF6' }}>כוח שריר (MRC 0-5)</h4>
+            
+            <div className="input-group mb-4">
+              <label className="input-label">שריר מטרה (למשל: ארבע ראשי, מסובבי כתף)</label>
+              <input type="text" className="input" value={editedStrengthMuscle || ''} onChange={e => setEditedStrengthMuscle(e.target.value)} placeholder="שם השריר הנבדק..." />
+            </div>
+
+            <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+              <div className="input-group">
+                <label className="input-label">כוח התחלתי ({editedFirstMetric.strength || 3})</label>
+                <input type="range" min="0" max="5" step="0.5" className="w-full" value={editedFirstMetric.strength || 3} 
+                  onChange={e => setEditedFirstMetric({
+                    ...editedFirstMetric,
+                    strength: Number(e.target.value)
+                  })} />
+              </div>
+              <div className="input-group">
+                <label className="input-label">יעד כוח ({editedTargets.strength?.intermediate}) {editedTargetDate ? `עד ל-${new Date(editedTargetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric'})}` : ''}</label>
+                <input type="range" min="0" max="5" step="0.5" className="w-full" value={editedTargets.strength?.intermediate ?? 4} 
+                  onChange={e => setEditedTargets({
+                    ...editedTargets,
+                    strength: { ...editedTargets.strength, intermediate: Number(e.target.value), final: Number(e.target.value) }
+                  })} />
+              </div>
+            </div>
+          </div>
+
+          {/* Lower Limb Functional Metrics */}
+          {patient.isLowerLimb && (
+            <div className="p-4 rounded-lg border border-success border-opacity-20" style={{ background: 'rgba(16, 185, 129, 0.02)' }}>
+              <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-success-light)' }}>מדדי תפקוד גפה תחתונה (0-10)</h4>
+
+              {/* Walking */}
+              <div className="mb-4">
+                <h5 className="text-xs font-semibold mb-2 text-secondary">יכולת הליכה</h5>
+                <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+                  <div className="input-group">
+                    <label className="input-label">הליכה התחלתית ({editedFirstMetric.walking || 5})</label>
+                    <input type="range" min="0" max="10" step="1" className="w-full" value={editedFirstMetric.walking || 5} 
+                      onChange={e => setEditedFirstMetric({
+                        ...editedFirstMetric,
+                        walking: Number(e.target.value)
+                      })} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">יעד הליכה ({editedTargets.walking?.intermediate}) {editedTargetDate ? `עד ל-${new Date(editedTargetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric'})}` : ''}</label>
+                    <input type="range" min="0" max="10" step="1" className="w-full" value={editedTargets.walking?.intermediate ?? 8} 
+                      onChange={e => setEditedTargets({
+                        ...editedTargets,
+                        walking: { ...editedTargets.walking, intermediate: Number(e.target.value), final: Number(e.target.value) }
+                      })} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Stairs */}
+              <div className="mb-4">
+                <h5 className="text-xs font-semibold mb-2 text-secondary">עליית/ירידת מדרגות</h5>
+                <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+                  <div className="input-group">
+                    <label className="input-label">מדרגות התחלתי ({editedFirstMetric.stairs || 4})</label>
+                    <input type="range" min="0" max="10" step="1" className="w-full" value={editedFirstMetric.stairs || 4} 
+                      onChange={e => setEditedFirstMetric({
+                        ...editedFirstMetric,
+                        stairs: Number(e.target.value)
+                      })} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">יעד מדרגות ({editedTargets.stairs?.intermediate}) {editedTargetDate ? `עד ל-${new Date(editedTargetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric'})}` : ''}</label>
+                    <input type="range" min="0" max="10" step="1" className="w-full" value={editedTargets.stairs?.intermediate ?? 8} 
+                      onChange={e => setEditedTargets({
+                        ...editedTargets,
+                        stairs: { ...editedTargets.stairs, intermediate: Number(e.target.value), final: Number(e.target.value) }
+                      })} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Running */}
+              <div>
+                <h5 className="text-xs font-semibold mb-2 text-secondary">יכולת ריצה</h5>
+                <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+                  <div className="input-group">
+                    <label className="input-label">ריצה התחלתית ({editedFirstMetric.running || 2})</label>
+                    <input type="range" min="0" max="10" step="1" className="w-full" value={editedFirstMetric.running || 2} 
+                      onChange={e => setEditedFirstMetric({
+                        ...editedFirstMetric,
+                        running: Number(e.target.value)
+                      })} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">יעד ריצה ({editedTargets.running?.intermediate}) {editedTargetDate ? `עד ל-${new Date(editedTargetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric'})}` : ''}</label>
+                    <input type="range" min="0" max="10" step="1" className="w-full" value={editedTargets.running?.intermediate ?? 5} 
+                      onChange={e => setEditedTargets({
+                        ...editedTargets,
+                        running: { ...editedTargets.running, intermediate: Number(e.target.value), final: Number(e.target.value) }
+                      })} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3">
+            <button type="button" className="btn btn-ghost" onClick={() => setActiveTab('overview')}>
+              ביטול
+            </button>
+            <button type="submit" className="btn btn-primary">
+              שמור שינויים
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Media Viewer Lightbox Modal for Therapist */}
+      {activeMedia && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            background: 'rgba(15, 23, 42, 0.9)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-4)',
+            direction: 'rtl'
+          }}
+          onClick={() => setActiveMedia(null)}
+        >
+          <div 
+            style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-xl)',
+              padding: 'var(--space-5)',
+              maxWidth: '640px',
+              width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-xl)',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()} // Stop closing on content click
+          >
+            {/* Header info */}
+            <div className="flex justify-between items-center mb-4 border-b border-color pb-3">
+              <div>
+                <h3 className="font-bold text-sm text-primary truncate" style={{ maxWidth: '400px' }}>
+                  {activeMedia.title || activeMedia.name}
+                </h3>
+                <span className="text-xs text-muted">
+                  {new Date(activeMedia.date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+              <button 
+                className="btn btn-icon btn-ghost" 
+                onClick={() => setActiveMedia(null)}
+                style={{ width: 32, height: 32 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Media Content */}
+            <div style={{ 
+              flex: 1, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              background: 'black', 
+              borderRadius: 'var(--radius-md)', 
+              overflow: 'hidden', 
+              minHeight: '260px',
+              maxHeight: '50vh',
+              position: 'relative'
+            }}>
+              {activeMedia.type === 'image' ? (
+                <img 
+                  src={getMediaSrc(activeMedia)} 
+                  alt={activeMedia.name} 
+                  style={{ width: '100%', height: '100%', maxHeight: '50vh', objectFit: 'contain' }} 
+                />
+              ) : (
+                /* Video Player */
+                <video 
+                  src={getMediaSrc(activeMedia)} 
+                  controls
+                  style={{ width: '100%', height: '100%', maxHeight: '50vh', objectFit: 'contain' }}
+                />
+              )}
+            </div>
+
+            {/* Note info */}
+            {activeMedia.note && (
+              <div style={{ background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', marginTop: 'var(--space-4)' }}>
+                <div className="flex gap-2 items-start">
+                  <MessageSquare size={16} style={{ color: 'var(--color-primary-light)', flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div className="text-xs text-muted font-bold mb-1">הערת המטופל:</div>
+                    <p className="text-xs text-secondary" style={{ lineHeight: 1.5 }}>{activeMedia.note}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

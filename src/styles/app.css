@@ -1,0 +1,474 @@
+/* ===================================
+   SPORTAG PRO - Component Styles
+   Page and component-specific CSS
+   =================================== */
+
+/* === Login Page === */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-bg-effects {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.login-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  animation: float 6s ease-in-out infinite;
+}
+
+.login-orb-1 {
+  width: 300px;
+  height: 300px;
+  background: rgba(38, 98, 137, 0.25);
+  top: 10%;
+  right: 20%;
+  animation-delay: 0s;
+}
+
+.login-orb-2 {
+  width: 250px;
+  height: 250px;
+  background: rgba(226, 34, 121, 0.15);
+  bottom: 20%;
+  left: 10%;
+  animation-delay: 2s;
+}
+
+.login-orb-3 {
+  width: 200px;
+  height: 200px;
+  background: rgba(8, 145, 178, 0.2);
+  top: 50%;
+  right: 60%;
+  animation-delay: 4s;
+}
+
+.login-container {
+  position: relative;
+  z-index: 2;
+  max-width: 440px;
+  width: 100%;
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.login-container.login-exit {
+  opacity: 0;
+  transform: scale(0.95) translateY(-20px);
+}
+
+.login-logo {
+  text-align: center;
+  margin-bottom: var(--space-10);
+}
+
+.login-logo-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-2xl);
+  background: linear-gradient(135deg, #266289, #0891B2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-4);
+  color: white;
+  box-shadow: 0 8px 32px rgba(38, 98, 137, 0.4);
+}
+
+.login-title {
+  font-size: var(--font-size-3xl);
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--text-primary), var(--color-primary-light));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.02em;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-2);
+}
+
+.login-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.login-role-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  text-align: start;
+  font-family: var(--font-family);
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.login-role-card:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-color-hover);
+  transform: translateX(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.login-role-card.selected {
+  border-color: var(--color-primary-light);
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.login-role-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.login-role-card h3 {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.login-role-card p {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.login-role-arrow {
+  margin-inline-start: auto;
+  color: var(--text-tertiary);
+  transition: transform var(--transition-base);
+}
+
+.login-role-card:hover .login-role-arrow {
+  transform: translateX(-4px);
+  color: var(--color-primary-light);
+}
+
+.login-footer {
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+/* === Dashboard === */
+.dashboard-section {
+  margin-bottom: var(--space-8);
+}
+
+.patients-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 768px) {
+  .patients-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* === Schedule List === */
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.schedule-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) !important;
+}
+
+.schedule-time {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  border-inline-end: 3px solid;
+  padding-inline-end: var(--space-3);
+  min-width: 60px;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-info {
+  flex: 1;
+}
+
+.schedule-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* === Reminders === */
+.reminders-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* === Session Summary === */
+.session-summary {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  line-height: 1.9;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background: var(--bg-tertiary);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* === Exercise Card === */
+.exercise-card.exercise-done {
+  opacity: 0.7;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.exercise-indicator {
+  width: 4px;
+  height: 32px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.exercise-details {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* === Consent Modal === */
+.consent-points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.consent-point {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+/* === Recording === */
+.recording-screen {
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+/* === Processing Steps === */
+.processing-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.processing-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.processing-step.completed {
+  color: #10B981;
+}
+
+.processing-step.active {
+  color: var(--color-primary-light);
+}
+
+/* === Calendar === */
+.calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .calendar-week {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+}
+
+.calendar-day {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  min-height: 120px;
+  overflow: hidden;
+}
+
+.calendar-day-today {
+  border-color: var(--color-primary-light);
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.calendar-day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.calendar-day-name {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.calendar-day-number {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.calendar-day-number.today {
+  background: var(--color-primary);
+  color: white;
+}
+
+.calendar-day-events {
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.calendar-event {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border-inline-start: 3px solid;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.calendar-event:hover {
+  transform: translateX(-2px);
+}
+
+/* === Pain Scale === */
+.pain-scale-wrapper {
+  text-align: center;
+}
+
+.pain-scale-label {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.pain-emoji {
+  font-size: 1.5rem;
+}
+
+/* === Body Map === */
+.body-map-container {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.body-map-svg {
+  width: 200px;
+  max-width: 100%;
+  height: auto;
+}
+
+.body-map-area {
+  transition: all var(--transition-base);
+}
+
+.body-map-area:hover {
+  fill: rgba(8, 145, 178, 0.15);
+}
+
+/* === Milestones === */
+.milestones-list {
+  position: relative;
+}
+
+.milestones-list::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  right: 13px;
+  width: 2px;
+  height: calc(100% - 28px);
+  background: var(--border-color);
+}
+
+.milestone-item {
+  position: relative;
+}
+
+/* === Recharts Custom === */
+.recharts-cartesian-axis-tick-value {
+  fill: var(--text-tertiary);
+}
+
+/* === Responsive === */
+@media (max-width: 768px) {
+  .schedule-time {
+    font-size: var(--font-size-base);
+    min-width: 50px;
+  }
+
+  .login-logo-icon {
+    width: 60px;
+    height: 60px;
+  }
+
+  .login-title {
+    font-size: var(--font-size-2xl);
+  }
+}
