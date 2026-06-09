@@ -1,15 +1,29 @@
-// === Daily Journal ===
-import { useState } from 'react';
+// === Daily Journal with Supabase & GPX parser ===
+import { useState, useEffect } from 'react';
 import { PainScale, BodyMap } from '../../components/SharedComponents';
 import { mockJournalEntries } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { supabase } from '../../services/supabaseClient';
+import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import {
-  Save, Clock, Activity, Moon, Zap, MessageSquare, CheckCircle, Heart, Smartphone
+  Save, Clock, Activity, Moon, Zap, MessageSquare, CheckCircle, Heart, Smartphone, Upload
 } from 'lucide-react';
 
+function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
 export default function DailyJournal() {
-  const { user } = useAuth();
+  const { user, isMockMode } = useAuth();
+  
   const [painLevel, setPainLevel] = useState(4);
   const [selectedArea, setSelectedArea] = useState('knee-r');
   const [mood, setMood] = useState('טוב');
@@ -19,7 +33,7 @@ export default function DailyJournal() {
   const [notes, setNotes] = useState('');
   const [saved, setSaved] = useState(false);
 
-  // Patient Lower Limb Slider States (Yuval has isLowerLimb = true)
+  // Patient Lower Limb Slider States
   const isLowerLimb = user?.isLowerLimb || false;
   const [walking, setWalking] = useState(8);
   const [stairs, setStairs] = useState(7);
@@ -32,6 +46,9 @@ export default function DailyJournal() {
   const [distanceKm, setDistanceKm] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
 
+  // Journal History for charts
+  const [journalHistory, setJournalHistory] = useState([]);
+
   const moods = [
     { label: 'מצוין', emoji: '😊', value: 'מצוין' },
     { label: 'טוב', emoji: '🙂', value: 'טוב' },
@@ -39,10 +56,32 @@ export default function DailyJournal() {
     { label: 'לא טוב', emoji: '😞', value: 'לא טוב' },
   ];
 
-  const painData = mockJournalEntries.slice(0, 7).reverse().map(entry => ({
-    date: new Date(entry.date).toLocaleDateString('he-IL', { weekday: 'short' }),
-    pain: entry.painLevel,
-  }));
+  // Load past journals
+  useEffect(() => {
+    loadJournals();
+  }, [user]);
+
+  const loadJournals = async () => {
+    if (!user) return;
+    
+    if (isMockMode) {
+      setJournalHistory(mockJournalEntries);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('journals')
+        .select('*')
+        .eq('patient_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+      setJournalHistory(data || []);
+    } catch (err) {
+      console.error('Error loading journals:', err);
+    }
+  };
 
   const handleConnectDevice = (type) => {
     setIsConnecting(true);
@@ -56,32 +95,122 @@ export default function DailyJournal() {
     }, 1500);
   };
 
-  const handleSave = () => {
-    const newEntry = {
+  // Real Garmin GPX File Parser
+  const handleGpxUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsConnecting(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const gpxText = event.target.result;
+        const parser = new DOMParser();
+        const gpxDoc = parser.parseFromString(gpxText, 'text/xml');
+
+        const trkpts = gpxDoc.getElementsByTagName('trkpt');
+        if (trkpts.length === 0) {
+          alert('לא נמצאו נקודות אימון בקובץ ה-GPX שהועלה. אנא ודא שזהו קובץ ריצה תקין מגרמין.');
+          setIsConnecting(false);
+          return;
+        }
+
+        let totalDistance = 0;
+        for (let i = 0; i < trkpts.length - 1; i++) {
+          const lat1 = parseFloat(trkpts[i].getAttribute('lat'));
+          const lon1 = parseFloat(trkpts[i].getAttribute('lon'));
+          const lat2 = parseFloat(trkpts[i + 1].getAttribute('lat'));
+          const lon2 = parseFloat(trkpts[i + 1].getAttribute('lon'));
+
+          totalDistance += calculateHaversineDistance(lat1, lon1, lat2, lon2);
+        }
+
+        // Calculate duration from time stamps
+        let durationMinutes = 0;
+        const times = gpxDoc.getElementsByTagName('time');
+        if (times.length >= 2) {
+          const startTime = new Date(times[0].textContent);
+          const endTime = new Date(times[times.length - 1].textContent);
+          const diffMs = endTime - startTime;
+          durationMinutes = Math.round(diffMs / 1000 / 60);
+        }
+
+        const distanceRounded = Math.round(totalDistance * 100) / 100;
+        // Estimate steps based on running step size (roughly 1000-1100 steps per km)
+        const estimatedSteps = Math.round(distanceRounded * 1050);
+
+        // Try to get activity name
+        let actName = 'ריצת גרמין';
+        const nameTags = gpxDoc.getElementsByTagName('name');
+        if (nameTags.length > 0 && nameTags[0].textContent) {
+          actName = nameTags[0].textContent;
+        }
+
+        setDeviceSynced(true);
+        setDeviceType('garmin');
+        setStepsCount(estimatedSteps);
+        setDistanceKm(distanceRounded);
+        setActivity(`${actName} (${distanceRounded} ק״מ, ${durationMinutes} דק׳)`);
+      } catch (err) {
+        console.error(err);
+        alert('שגיאה בקריאת קובץ ה-GPX. ודא שהקובץ תקין ובפורמט XML/GPX.');
+      } finally {
+        setIsConnecting(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSave = async () => {
+    const journalData = {
       date: new Date().toISOString().slice(0, 10),
-      painLevel: Number(painLevel),
+      pain_level: Number(painLevel),
       mood,
       energy: Number(energy),
       sleep: Number(sleep),
       activity: activity || (deviceSynced ? (deviceType === 'garmin' ? 'ריצה מסונכרנת משעון גרמין' : 'פעילות מסונכרנת מ-Apple Health') : 'מנוחה'),
       notes,
-      exercisesCompleted: true,
       ...(isLowerLimb ? {
-        walkingScore: Number(walking),
-        stairsScore: Number(stairs),
-        runningScore: Number(running)
+        walking_score: Number(walking),
+        stairs_score: Number(stairs),
+        running_score: Number(running)
       } : {}),
-      ...(deviceSynced ? {
-        stepsCount,
-        distanceKm,
-        deviceSynced: true,
-        deviceType
-      } : { deviceSynced: false })
+      steps_count: stepsCount,
+      distance_km: parseFloat(distanceKm),
+      device_synced: deviceSynced,
+      device_type: deviceType
     };
-    mockJournalEntries.unshift(newEntry);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+
+    if (isMockMode) {
+      mockJournalEntries.unshift({ ...journalData, patientId: user.id });
+      setSaved(true);
+      loadJournals();
+      setTimeout(() => setSaved(false), 3000);
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('journals')
+        .insert([{
+          patient_id: user.id,
+          ...journalData
+        }]);
+
+      if (error) throw error;
+      setSaved(true);
+      loadJournals();
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error(err);
+      alert('שגיאה בשמירת המעקב: ' + err.message);
+    }
   };
+
+  const painData = journalHistory.slice(0, 7).reverse().map(entry => ({
+    date: new Date(entry.date).toLocaleDateString('he-IL', { weekday: 'short' }),
+    pain: entry.pain_level !== undefined ? entry.pain_level : entry.painLevel,
+  }));
 
   return (
     <div>
@@ -175,7 +304,7 @@ export default function DailyJournal() {
         </div>
       </div>
 
-      {/* Lower Limb Functional Metrics (Yuval/Noa) */}
+      {/* Lower Limb Functional Metrics */}
       {isLowerLimb && (
         <div className="card mb-4 animate-fade-in-up">
           <h3 className="section-title" style={{ color: '#10B981' }}>מדדי תפקוד גפה תחתונה</h3>
@@ -224,39 +353,51 @@ export default function DailyJournal() {
         </div>
       )}
 
-      {/* Synced Device Integration */}
+      {/* Wearable Device Sync */}
       <div className="card mb-4 animate-fade-in-up" style={{ border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.02)' }}>
         <h3 className="section-title flex items-center gap-2" style={{ color: '#F59E0B' }}>
-          <span>⌚ חיבור שעון / התקן לביש</span>
+          <span>⌚ חיבור שעון גרמין / Garmin Sync</span>
         </h3>
         
         {!deviceSynced ? (
           <div className="text-center py-3">
-            <p className="text-xs text-secondary mb-4">חבר את שעון הריצה או את ה-iPhone שלך כדי לסנכרן צעדים ואימונים למעקב היומי באופן אוטומטי.</p>
+            <p className="text-xs text-secondary mb-4">בחר קובץ אימון GPX שיוצא מהגרמין שלך כדי לסנכרן מרחק, צעדים ופעילות.</p>
             
             {isConnecting ? (
               <div className="flex flex-col items-center gap-2">
                 <div style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid #F59E0B', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-                <span className="text-xs text-secondary">מתחבר למכשיר...</span>
+                <span className="text-xs text-secondary">מעבד נתוני GPX...</span>
               </div>
             ) : (
-              <div className="flex gap-3 justify-center">
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  style={{ border: '1px solid #F59E0B', color: '#F59E0B', background: 'transparent' }}
-                  onClick={() => handleConnectDevice('garmin')}
+              <div className="flex flex-col items-center gap-3">
+                <label 
+                  className="btn btn-sm cursor-pointer"
+                  style={{ border: '1px solid #F59E0B', color: '#F59E0B', background: 'transparent', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  חבר Garmin ⌚
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  style={{ border: '1px solid #0891B2', color: '#0891B2', background: 'transparent' }}
-                  onClick={() => handleConnectDevice('apple_health')}
-                >
-                  חבר Apple Health 📱
-                </button>
+                  <Upload size={14} />
+                  העלה קובץ אימון (GPX)
+                  <input
+                    type="file"
+                    accept=".gpx"
+                    onChange={handleGpxUpload}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+                
+                <span className="text-xxs text-secondary">
+                  * תוכל להוריד קובץ .gpx מכל אימון ב-Garmin Connect.
+                </span>
+
+                <div className="flex gap-2 justify-center mt-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => handleConnectDevice('garmin')}
+                    style={{ color: '#F59E0B', fontSize: 10 }}
+                  >
+                    (סימולציה ללא קובץ)
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -264,12 +405,12 @@ export default function DailyJournal() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <span className="text-xs font-bold" style={{ color: '#F59E0B' }}>
-                מכשיר מחובר: {deviceType === 'garmin' ? 'Garmin Fenix 7' : 'Apple Watch / Health'}
+                מכשיר מסונכרן: Garmin Fenix / Forerunner
               </span>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => { setDeviceSynced(false); setDeviceType(''); }}
+                onClick={() => { setDeviceSynced(false); setDeviceType(''); setStepsCount(0); setDistanceKm(0); }}
                 style={{ color: 'var(--text-tertiary)', fontSize: 11, padding: 0 }}
               >
                 נתק
@@ -281,7 +422,7 @@ export default function DailyJournal() {
                 <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
                   {stepsCount.toLocaleString()}
                 </div>
-                <div className="text-xs text-secondary">צעדים היום</div>
+                <div className="text-xs text-secondary">צעדים מחושבים</div>
               </div>
               <div style={{ background: 'var(--bg-tertiary)', padding: 'var(--space-2)', borderRadius: 'var(--radius-md)' }}>
                 <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -331,30 +472,32 @@ export default function DailyJournal() {
       </button>
 
       {/* Weekly Trend */}
-      <div className="card animate-fade-in-up">
-        <h3 className="section-title">מגמת כאב שבועית</h3>
-        <div style={{ width: '100%', height: 180 }}>
-          <ResponsiveContainer>
-            <AreaChart data={painData}>
-              <defs>
-                <linearGradient id="painGradJournal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#E22279" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#E22279" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={11} />
-              <YAxis domain={[0, 10]} stroke="var(--text-tertiary)" fontSize={11} />
-              <Tooltip
-                contentStyle={{
-                  background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-                  borderRadius: 8, color: 'var(--text-primary)', direction: 'rtl',
-                }}
-              />
-              <Area type="monotone" dataKey="pain" stroke="#E22279" fill="url(#painGradJournal)" strokeWidth={2} name="כאב" />
-            </AreaChart>
-          </ResponsiveContainer>
+      {painData.length > 0 && (
+        <div className="card animate-fade-in-up">
+          <h3 className="section-title">מגמת כאב שבועית</h3>
+          <div style={{ width: '100%', height: 180 }}>
+            <ResponsiveContainer>
+              <AreaChart data={painData}>
+                <defs>
+                  <linearGradient id="painGradJournal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#E22279" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#E22279" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={11} />
+                <YAxis domain={[0, 10]} stroke="var(--text-tertiary)" fontSize={11} />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                    borderRadius: 8, color: 'var(--text-primary)', direction: 'rtl',
+                  }}
+                />
+                <Area type="monotone" dataKey="pain" stroke="#E22279" fill="url(#painGradJournal)" strokeWidth={2} name="כאב" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

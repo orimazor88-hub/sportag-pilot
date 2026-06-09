@@ -1,7 +1,8 @@
 // === Therapist Dashboard ===
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 import { StatsCard, PatientCard, SearchBar } from '../../components/SharedComponents';
 import { mockPatients, mockCalendarEvents, mockReminders } from '../../data/mockData';
 import {
@@ -10,14 +11,63 @@ import {
 } from 'lucide-react';
 
 export default function TherapistDashboard() {
-  const { user } = useAuth();
+  const { user, isMockMode } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPatients();
+  }, [isMockMode]);
+
+  const loadPatients = async () => {
+    if (isMockMode) {
+      setPatients(mockPatients);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'patient');
+
+      if (error) throw error;
+
+      const formatted = (data || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        phone: p.phone || 'לא עודכן',
+        avatar: p.avatar || '🏃',
+        avatarBg: '#8B5CF6',
+        sport: 'פיילוט פעיל',
+        conditionHe: p.condition_name || 'שיקום פיזיותרפיה',
+        condition: 'Active Rehab Profile',
+        area: p.is_lower_limb ? 'ברך' : 'כתף',
+        areaColor: p.is_lower_limb ? '#06B6D4' : '#8B5CF6',
+        startDate: p.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        sessionsCount: 0,
+        painLevel: 4,
+        progress: 50,
+        isLowerLimb: p.is_lower_limb
+      }));
+
+      setPatients(formatted);
+    } catch (err) {
+      console.error('Error loading patients:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const todayEvents = mockCalendarEvents.filter(e => e.date === '2026-06-03');
   const pendingReminders = mockReminders.filter(r => r.status === 'pending');
 
-  const filteredPatients = mockPatients.filter(p =>
+  const filteredPatients = patients.filter(p =>
     p.name.includes(search) || p.conditionHe.includes(search) || p.area.includes(search)
   );
 
@@ -42,7 +92,7 @@ export default function TherapistDashboard() {
       <div className="stats-grid animate-fade-in-up">
         <StatsCard
           icon={Users}
-          value={mockPatients.length}
+          value={patients.length}
           label="מטופלים פעילים"
           color="#266289"
         />

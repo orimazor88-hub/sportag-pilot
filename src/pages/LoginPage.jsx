@@ -1,46 +1,105 @@
-// === Login Page ===
+// === Login Page with Supabase Support ===
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Stethoscope, UserRound, ArrowLeft, Activity, Lock, User } from 'lucide-react';
+import { Stethoscope, UserRound, Activity, Lock, User, UserPlus } from 'lucide-react';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, signup, isMockMode } = useAuth();
   const navigate = useNavigate();
   
   const [isTherapistMode, setIsTherapistMode] = useState(false);
   const [patientCode, setPatientCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  
+  // Sign Up states (for Supabase mode)
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [signUpName, setSignUpName] = useState('');
+  const [signUpEmail, setSignUpEmail] = useState('');
+  const [signUpPassword, setSignUpPassword] = useState('');
+  const [signUpRole, setSignUpRole] = useState('patient');
+  const [isLowerLimb, setIsLowerLimb] = useState(true);
+
   const [animating, setAnimating] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
-  const handlePatientSubmit = (e) => {
+  const handlePatientSubmit = async (e) => {
     e.preventDefault();
-    if (!patientCode.trim()) {
-      setError('נא להזין קוד מטופל');
-      return;
+    if (isMockMode) {
+      if (!patientCode.trim()) {
+        setError('נא להזין קוד מטופל');
+        return;
+      }
+      setError('');
+      setAnimating(true);
+      setTimeout(() => {
+        login('patient');
+        navigate('/patient');
+      }, 600);
+    } else {
+      // In real mode, use email/password login
+      handleRealLogin('patient');
     }
-    setError('');
-    setAnimating(true);
-    setTimeout(() => {
-      login('patient');
-      navigate('/patient');
-    }, 600);
   };
 
-  const handleTherapistSubmit = (e) => {
+  const handleTherapistSubmit = async (e) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
       setError('נא להזין אימייל וסיסמה');
       return;
     }
     setError('');
-    setAnimating(true);
-    setTimeout(() => {
-      login('therapist');
-      navigate('/therapist');
-    }, 600);
+    
+    if (isMockMode) {
+      setAnimating(true);
+      setTimeout(() => {
+        login('therapist');
+        navigate('/therapist');
+      }, 600);
+    } else {
+      handleRealLogin('therapist');
+    }
+  };
+
+  const handleRealLogin = async (intendedRole) => {
+    try {
+      setAnimating(true);
+      const res = await login(email, password);
+      if (res.success) {
+        // Redirect will happen automatically via AuthContext role change,
+        // but let's navigate as a backup once loading finishes
+        setTimeout(() => {
+          navigate(intendedRole === 'therapist' ? '/therapist' : '/patient');
+        }, 100);
+      }
+    } catch (err) {
+      setAnimating(false);
+      setError(err.message || 'התחברות נכשלה. אנא בדוק את פרטי הכניסה.');
+    }
+  };
+
+  const handleSignUpSubmit = async (e) => {
+    e.preventDefault();
+    if (!signUpEmail.trim() || !signUpPassword.trim() || !signUpName.trim()) {
+      setError('נא למלא את כל השדות');
+      return;
+    }
+    setError('');
+    setMessage('');
+    
+    try {
+      setAnimating(true);
+      await signup(signUpEmail, signUpPassword, signUpName, signUpRole, isLowerLimb);
+      setMessage('הרשמה בוצעה בהצלחה! כעת תוכל להתחבר.');
+      setIsSignUp(false);
+      setEmail(signUpEmail);
+      setAnimating(false);
+    } catch (err) {
+      setAnimating(false);
+      setError(err.message || 'הרשמה נכשלה. נסה שנית.');
+    }
   };
 
   return (
@@ -58,7 +117,9 @@ export default function LoginPage() {
           </div>
           <h1 className="login-title">Physio-AI Pro</h1>
           <p className="login-subtitle">
-            {isTherapistMode ? 'מערכת ניהול ובקרה לצוות הרפואי' : 'אפליקציית מעקב ותרגול אישית למטופלים'}
+            {isSignUp 
+              ? 'יצירת חשבון משתמש חדש' 
+              : (isTherapistMode ? 'מערכת ניהול ובקרה לצוות הרפואי' : 'אפליקציית מעקב ותרגול אישית למטופלים')}
           </p>
         </div>
 
@@ -80,130 +141,287 @@ export default function LoginPage() {
           </div>
         )}
 
-        {!isTherapistMode ? (
-          /* Patient Login Form */
-          <form onSubmit={handlePatientSubmit} className="flex flex-col gap-4 animate-fade-in-up stagger-2">
+        {message && (
+          <div 
+            style={{ 
+              background: 'rgba(16, 185, 129, 0.15)', 
+              border: '1px solid var(--color-success)', 
+              color: 'var(--color-success-light)', 
+              padding: '10px', 
+              borderRadius: 'var(--radius-md)', 
+              fontSize: '13px', 
+              textAlign: 'center',
+              marginBottom: '15px'
+            }}
+          >
+            {message}
+          </div>
+        )}
+
+        {isSignUp ? (
+          /* Sign Up Form (Only visible in Supabase mode) */
+          <form onSubmit={handleSignUpSubmit} className="flex flex-col gap-4 animate-fade-in-up">
             <div className="input-group">
-              <label className="input-label">קוד כניסה אישי</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  pattern="[0-9]*"
-                  inputMode="numeric"
-                  maxLength={6}
-                  className="input"
-                  style={{ paddingRight: '40px' }}
-                  value={patientCode}
-                  onChange={(e) => setPatientCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="הקלד קוד מטופל (לדוגמה: 1234)"
-                  autoFocus
-                />
-                <Lock 
-                  size={16} 
-                  style={{ 
-                    position: 'absolute', 
-                    right: '12px', 
-                    top: '50%', 
-                    transform: 'translateY(-50%)', 
-                    color: 'var(--text-tertiary)' 
-                  }} 
-                />
-              </div>
-              <span className="text-xs text-muted mt-1">
-                הקוד האישי נמצא במידע שקיבלת מהפיזיותרפיסט שלך בקליניקה.
-              </span>
+              <label className="input-label">שם מלא</label>
+              <input
+                type="text"
+                className="input"
+                value={signUpName}
+                onChange={(e) => setSignUpName(e.target.value)}
+                placeholder="ישראל ישראלי"
+                required
+              />
             </div>
 
+            <div className="input-group">
+              <label className="input-label">כתובת אימייל</label>
+              <input
+                type="email"
+                className="input"
+                value={signUpEmail}
+                onChange={(e) => setSignUpEmail(e.target.value)}
+                placeholder="name@email.com"
+                required
+              />
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">סיסמה</label>
+              <input
+                type="password"
+                className="input"
+                value={signUpPassword}
+                onChange={(e) => setSignUpPassword(e.target.value)}
+                placeholder="לפחות 6 תווים"
+                required
+              />
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">תפקיד במערכת</label>
+              <select 
+                className="input"
+                value={signUpRole}
+                onChange={(e) => setSignUpRole(e.target.value)}
+              >
+                <option value="patient">מטופל (Patient)</option>
+                <option value="therapist">פיזיותרפיסט (Therapist)</option>
+              </select>
+            </div>
+
+            {signUpRole === 'patient' && (
+              <div className="flex items-center gap-2 mt-1">
+                <input 
+                  type="checkbox" 
+                  id="isLowerLimb" 
+                  checked={isLowerLimb} 
+                  onChange={(e) => setIsLowerLimb(e.target.checked)} 
+                />
+                <label htmlFor="isLowerLimb" className="text-xs text-secondary">
+                  פציעת גפה תחתונה (ברך/ירך/קרסול)
+                </label>
+              </div>
+            )}
+
             <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
-              <UserRound size={18} />
-              התחברות כמטופל
+              <UserPlus size={18} />
+              הרשם עכשיו
             </button>
 
             <button 
               type="button" 
               className="btn btn-ghost btn-sm mt-4" 
               style={{ border: 'none', fontSize: '11px', color: 'var(--text-secondary)' }}
-              onClick={() => {
-                setIsTherapistMode(true);
-                setError('');
-              }}
+              onClick={() => setIsSignUp(false)}
             >
-              כניסת צוות מטפלים / אדמין 👨‍⚕️
+              חזרה להתחברות
             </button>
           </form>
         ) : (
-          /* Therapist / Admin Login Form */
-          <form onSubmit={handleTherapistSubmit} className="flex flex-col gap-4 animate-fade-in-up" style={{ animationDuration: '0.3s' }}>
-            <div className="input-group">
-              <label className="input-label">אימייל מטפל</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="email"
-                  className="input"
-                  style={{ paddingRight: '40px' }}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="staff@physioai.com"
-                  autoFocus
-                />
-                <User 
-                  size={16} 
-                  style={{ 
-                    position: 'absolute', 
-                    right: '12px', 
-                    top: '50%', 
-                    transform: 'translateY(-50%)', 
-                    color: 'var(--text-tertiary)' 
-                  }} 
-                />
-              </div>
-            </div>
+          /* Login Forms */
+          <>
+            {!isTherapistMode ? (
+              /* Patient Login Form */
+              <form onSubmit={handlePatientSubmit} className="flex flex-col gap-4 animate-fade-in-up stagger-2">
+                {isMockMode ? (
+                  <div className="input-group">
+                    <label className="input-label">קוד כניסה אישי (דמו)</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        pattern="[0-9]*"
+                        inputMode="numeric"
+                        maxLength={6}
+                        className="input"
+                        style={{ paddingRight: '40px' }}
+                        value={patientCode}
+                        onChange={(e) => setPatientCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="הקלד קוד מטופל (לדוגמה: 1234)"
+                        autoFocus
+                      />
+                      <Lock 
+                        size={16} 
+                        style={{ 
+                          position: 'absolute', 
+                          right: '12px', 
+                          top: '50%', 
+                          transform: 'translateY(-50%)', 
+                          color: 'var(--text-tertiary)' 
+                        }} 
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="input-group">
+                      <label className="input-label">אימייל מטופל</label>
+                      <input
+                        type="email"
+                        className="input"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="patient@email.com"
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label className="input-label">סיסמה</label>
+                      <input
+                        type="password"
+                        className="input"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        required
+                      />
+                    </div>
+                  </>
+                )}
 
-            <div className="input-group">
-              <label className="input-label">סיסמה</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="password"
-                  className="input"
-                  style={{ paddingRight: '40px' }}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                />
-                <Lock 
-                  size={16} 
-                  style={{ 
-                    position: 'absolute', 
-                    right: '12px', 
-                    top: '50%', 
-                    transform: 'translateY(-50%)', 
-                    color: 'var(--text-tertiary)' 
-                  }} 
-                />
-              </div>
-            </div>
+                <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
+                  <UserRound size={18} />
+                  התחברות כמטופל
+                </button>
 
-            <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
-              <Stethoscope size={18} />
-              התחברות צוות רפואי
-            </button>
+                <div className="flex flex-col gap-1 mt-4">
+                  <button 
+                    type="button" 
+                    className="btn btn-ghost btn-sm" 
+                    style={{ border: 'none', fontSize: '11px', color: 'var(--text-secondary)' }}
+                    onClick={() => {
+                      setIsTherapistMode(true);
+                      setError('');
+                    }}
+                  >
+                    כניסת צוות מטפלים / אדמין 👨‍⚕️
+                  </button>
 
-            <button 
-              type="button" 
-              className="btn btn-ghost btn-sm mt-4" 
-              style={{ border: 'none', fontSize: '11px', color: 'var(--color-primary-light)' }}
-              onClick={() => {
-                setIsTherapistMode(false);
-                setError('');
-              }}
-            >
-              חזרה להתחברות מטופלים
-            </button>
-          </form>
+                  {!isMockMode && (
+                    <button 
+                      type="button" 
+                      className="btn btn-ghost btn-sm" 
+                      style={{ border: 'none', fontSize: '11px', color: 'var(--color-primary-light)', fontWeight: 'bold' }}
+                      onClick={() => setIsSignUp(true)}
+                    >
+                      אין לך חשבון? הרשם כאן 👤
+                    </button>
+                  )}
+                </div>
+              </form>
+            ) : (
+              /* Therapist / Admin Login Form */
+              <form onSubmit={handleTherapistSubmit} className="flex flex-col gap-4 animate-fade-in-up" style={{ animationDuration: '0.3s' }}>
+                <div className="input-group">
+                  <label className="input-label">אימייל מטפל</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="email"
+                      className="input"
+                      style={{ paddingRight: '40px' }}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="staff@physioai.com"
+                      autoFocus
+                      required
+                    />
+                    <User 
+                      size={16} 
+                      style={{ 
+                        position: 'absolute', 
+                        right: '12px', 
+                        top: '50%', 
+                        transform: 'translateY(-50%)', 
+                        color: 'var(--text-tertiary)' 
+                      }} 
+                    />
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">סיסמה</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="password"
+                      className="input"
+                      style={{ paddingRight: '40px' }}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                    />
+                    <Lock 
+                      size={16} 
+                      style={{ 
+                        position: 'absolute', 
+                        right: '12px', 
+                        top: '50%', 
+                        transform: 'translateY(-50%)', 
+                        color: 'var(--text-tertiary)' 
+                      }} 
+                    />
+                  </div>
+                </div>
+
+                <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
+                  <Stethoscope size={18} />
+                  התחברות צוות רפואי
+                </button>
+
+                <div className="flex flex-col gap-1 mt-4">
+                  <button 
+                    type="button" 
+                    className="btn btn-ghost btn-sm" 
+                    style={{ border: 'none', fontSize: '11px', color: 'var(--color-primary-light)' }}
+                    onClick={() => {
+                      setIsTherapistMode(false);
+                      setError('');
+                    }}
+                  >
+                    חזרה להתחברות מטופלים
+                  </button>
+
+                  {!isMockMode && (
+                    <button 
+                      type="button" 
+                      className="btn btn-ghost btn-sm" 
+                      style={{ border: 'none', fontSize: '11px', color: 'var(--color-teal)', fontWeight: 'bold' }}
+                      onClick={() => {
+                        setIsSignUp(true);
+                        setSignUpRole('therapist');
+                      }}
+                    >
+                      צור חשבון מטפל חדש 👨‍⚕️
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+          </>
         )}
 
         <p className="login-footer animate-fade-in-up stagger-4">
-          גרסת דמו • פיזיו-AI © 2026
+          גרסת פיילוט • פיזיו-AI © 2026
         </p>
       </div>
     </div>

@@ -1,10 +1,11 @@
-// === Media Upload ===
+// === Media Upload with Supabase Support ===
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { mockExercises } from '../../data/mockData';
+import { supabase } from '../../services/supabaseClient';
 import {
-  Camera, Upload, Video, Image, X, Plus, MessageSquare, Trash2, ArrowUpDown, Play, Pencil
+  Camera, Upload, Video, X, Plus, MessageSquare, Trash2, ArrowUpDown, Play, Pencil
 } from 'lucide-react';
 
 // Helper to generate a canvas video thumbnail (Base64)
@@ -19,14 +20,12 @@ const generateVideoThumbnail = (file) => {
     video.src = url;
     
     video.onloadedmetadata = () => {
-      // Seek to 0.5s to get a good frame
       video.currentTime = 0.5;
     };
     
     video.onseeked = () => {
       try {
         const canvas = document.createElement('canvas');
-        // Scale down to keep size small for localStorage
         const scale = 0.25; 
         canvas.width = video.videoWidth * scale || 160;
         canvas.height = video.videoHeight * scale || 120;
@@ -54,7 +53,9 @@ export default function MediaUpload() {
   const [searchParams] = useSearchParams();
   const exerciseIdFromUrl = searchParams.get('exerciseId');
 
-  const { uploads, setUploads } = useAuth();
+  const { uploads, setUploads, user, isMockMode } = useAuth();
+  const [realUploads, setRealUploads] = useState([]);
+  
   const [showUpload, setShowUpload] = useState(false);
   const [note, setNote] = useState('');
   const [title, setTitle] = useState('');
@@ -65,6 +66,9 @@ export default function MediaUpload() {
   const [editTitle, setEditTitle] = useState('');
   const [editNote, setEditNote] = useState('');
   const [editExerciseId, setEditExerciseId] = useState('');
+  
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
 
   useEffect(() => {
     if (exerciseIdFromUrl) {
@@ -77,6 +81,47 @@ export default function MediaUpload() {
       }
     }
   }, [exerciseIdFromUrl]);
+
+  // Fetch real uploads on mount/user change
+  useEffect(() => {
+    loadUploads();
+  }, [user]);
+
+  const loadUploads = async () => {
+    if (!user) return;
+    
+    if (isMockMode) {
+      setRealUploads(uploads);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('media_uploads')
+        .select('*')
+        .eq('patient_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+      
+      // Adapt DB structures to UI representation
+      const formatted = (data || []).map(item => ({
+        id: item.id,
+        type: item.type,
+        name: item.file_name,
+        title: item.title,
+        exerciseId: item.exercise_id,
+        date: item.date,
+        note: item.note,
+        persistedUrl: item.file_url,
+        thumbnailUrl: item.thumbnail_url
+      }));
+
+      setRealUploads(formatted);
+    } catch (err) {
+      console.error('Error loading media uploads:', err);
+    }
+  };
 
   // Refs for hidden inputs
   const fileInputRef = useRef(null);
@@ -91,11 +136,12 @@ export default function MediaUpload() {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    const newUploads = [];
+    setIsUploading(true);
+    setUploadProgress('מעבד קובץ...');
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // Detect type
       let fileType = 'image';
       if (forceType) {
         fileType = forceType;
@@ -103,53 +149,125 @@ export default function MediaUpload() {
         fileType = 'video';
       }
 
-      // Temporary blob URL for instant preview in current session
-      const previewUrl = URL.createObjectURL(file);
-      
-      // Generate canvas thumbnail if it's a video
-      let thumbnailUrl = '';
-      if (fileType === 'video') {
-        thumbnailUrl = await generateVideoThumbnail(file);
+      if (isMockMode) {
+        // Mock Mode logic
+        const previewUrl = URL.createObjectURL(file);
+        let thumbnailUrl = '';
+        if (fileType === 'video') {
+          thumbnailUrl = await generateVideoThumbnail(file);
+        }
+
+        const persistedUrl = fileType === 'image'
+          ? 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=600&q=80'
+          : 'https://www.w3schools.com/html/mov_bbb.mp4';
+
+        const mockItem = {
+          id: Date.now() + i,
+          type: fileType,
+          name: file.name || (fileType === 'image' ? `photo_${i}.jpg` : `video_${i}.mp4`),
+          title: title.trim() || (fileType === 'image' ? 'תמונת תרגיל' : 'סרטון תרגיל'),
+          exerciseId: associatedExerciseId,
+          date: new Date().toISOString().split('T')[0],
+          note: note.trim() || 'קובץ שהועלה מהנייד',
+          previewUrl,
+          thumbnailUrl,
+          persistedUrl,
+        };
+
+        setUploads(prev => [mockItem, ...prev]);
+      } else {
+        // Supabase Real Mode Logic
+        try {
+          setUploadProgress(`מעלה קובץ ${i + 1}/${files.length} לשרת...`);
+          
+          // Generate a safe unique name for storage path
+          const fileExt = file.name.split('.').pop() || (fileType === 'image' ? 'jpg' : 'mp4');
+          const randomStr = Math.random().toString(36).substring(7);
+          const storageFileName = `${user.id}/${Date.now()}_${randomStr}.${fileExt}`;
+          const storagePath = `uploads/${storageFileName}`;
+
+          // 1. Upload file binary
+          const { error: uploadError } = await supabase.storage
+            .from('patient-media')
+            .upload(storagePath, file, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (uploadError) throw uploadError;
+
+          // 2. Get Public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('patient-media')
+            .getPublicUrl(storagePath);
+
+          // 3. Try to generate a local thumbnail for UI reference
+          let base64Thumbnail = null;
+          if (fileType === 'video') {
+            base64Thumbnail = await generateVideoThumbnail(file);
+          }
+
+          // 4. Save metadata to DB
+          const { error: dbError } = await supabase
+            .from('media_uploads')
+            .insert([{
+              patient_id: user.id,
+              title: title.trim() || (fileType === 'image' ? 'תמונת תרגיל' : 'סרטון תרגיל'),
+              type: fileType,
+              file_name: file.name,
+              file_url: publicUrl,
+              thumbnail_url: base64Thumbnail,
+              note: note.trim() || 'קובץ שהועלה מהנייד',
+              exercise_id: associatedExerciseId || null,
+              date: new Date().toISOString().split('T')[0]
+            }]);
+
+          if (dbError) throw dbError;
+        } catch (err) {
+          console.error(err);
+          alert(`שגיאה בהעלאה: ${err.message}\n\n* ודא שיצרת bucket ציבורי (Public) ב-Supabase בשם 'patient-media' עם הרשאות קריאה/כתיבה.`);
+          setIsUploading(false);
+          return;
+        }
       }
-
-      // High-quality public domain clinical fallbacks for persistence (prevents localStorage quota crash)
-      const persistedUrl = fileType === 'image'
-        ? 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=600&q=80'
-        : 'https://www.w3schools.com/html/mov_bbb.mp4';
-
-      newUploads.push({
-        id: Date.now() + i,
-        type: fileType,
-        name: file.name || (fileType === 'image' ? `photo_${i}.jpg` : `video_${i}.mp4`),
-        title: title.trim() || (fileType === 'image' ? 'תמונת תרגיל' : 'סרטון תרגיל'),
-        exerciseId: associatedExerciseId,
-        date: new Date().toISOString().split('T')[0],
-        note: note.trim() || 'קובץ שהועלה מהנייד',
-        previewUrl,
-        thumbnailUrl,
-        persistedUrl,
-      });
     }
 
-    setUploads(prev => [...newUploads, ...prev]);
+    setIsUploading(false);
+    loadUploads();
     setShowUpload(false);
     setNote('');
     setTitle('');
     setAssociatedExerciseId('');
   };
 
-  const handleDelete = (id, e) => {
-    e.stopPropagation(); // Prevent opening the modal
-    if (window.confirm('האם אתה בטוח שברצונך למחוק קובץ זה מהרשימה?')) {
-      setUploads(prev => prev.filter(item => item.id !== id));
-      if (activeMedia && activeMedia.id === id) {
-        setActiveMedia(null);
+  const handleDelete = async (id, e) => {
+    e.stopPropagation(); 
+    if (window.confirm('האם אתה בטוח שברצונך למחוק קובץ זה?')) {
+      if (isMockMode) {
+        setUploads(prev => prev.filter(item => item.id !== id));
+        setTimeout(loadUploads, 100);
+      } else {
+        try {
+          const { error } = await supabase
+            .from('media_uploads')
+            .delete()
+            .eq('id', id);
+          
+          if (error) throw error;
+          loadUploads();
+          if (activeMedia && activeMedia.id === id) {
+            setActiveMedia(null);
+          }
+        } catch (err) {
+          console.error(err);
+          alert('שגיאה במחיקה: ' + err.message);
+        }
       }
     }
   };
 
   const handleEditClick = (file, e) => {
-    e.stopPropagation(); // Prevent opening the modal normally
+    e.stopPropagation(); 
     setEditTitle(file.title || file.name);
     setEditNote(file.note || '');
     setEditExerciseId(file.exerciseId || '');
@@ -157,45 +275,63 @@ export default function MediaUpload() {
     setActiveMedia(file);
   };
 
-  const handleSaveEdit = () => {
-    setUploads(prev => prev.map(item => {
-      if (item.id === activeMedia.id) {
-        return {
-          ...item,
+  const handleSaveEdit = async () => {
+    if (isMockMode) {
+      setUploads(prev => prev.map(item => {
+        if (item.id === activeMedia.id) {
+          return {
+            ...item,
+            title: editTitle.trim(),
+            note: editNote.trim(),
+            exerciseId: editExerciseId
+          };
+        }
+        return item;
+      }));
+      setTimeout(loadUploads, 100);
+      setIsEditing(false);
+      setActiveMedia(prev => ({
+        ...prev,
+        title: editTitle.trim(),
+        note: editNote.trim(),
+        exerciseId: editExerciseId
+      }));
+    } else {
+      try {
+        const { error } = await supabase
+          .from('media_uploads')
+          .update({
+            title: editTitle.trim(),
+            note: editNote.trim(),
+            exercise_id: editExerciseId || null
+          })
+          .eq('id', activeMedia.id);
+
+        if (error) throw error;
+        loadUploads();
+        setIsEditing(false);
+        setActiveMedia(prev => ({
+          ...prev,
           title: editTitle.trim(),
           note: editNote.trim(),
           exerciseId: editExerciseId
-        };
+        }));
+      } catch (err) {
+        console.error(err);
+        alert('שגיאה בעדכון: ' + err.message);
       }
-      return item;
-    }));
-    setActiveMedia(prev => ({
-      ...prev,
-      title: editTitle.trim(),
-      note: editNote.trim(),
-      exerciseId: editExerciseId
-    }));
-    setIsEditing(false);
+    }
   };
 
-  const sortedUploads = [...uploads].sort((a, b) => {
+  const sortedUploads = [...realUploads].sort((a, b) => {
     const dateA = new Date(a.date);
     const dateB = new Date(b.date);
     return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
   });
 
-  // Helper to determine media source URL
   const getMediaSrc = (file) => {
     if (file.previewUrl) return file.previewUrl;
     if (file.persistedUrl) return file.persistedUrl;
-    
-    // Fallbacks for default mock data
-    if (file.id === 1 || file.id === 3) {
-      return 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=600&q=80';
-    }
-    if (file.id === 2) {
-      return 'https://www.w3schools.com/html/mov_bbb.mp4';
-    }
     return '';
   };
 
@@ -290,14 +426,26 @@ export default function MediaUpload() {
         <button 
           className="btn btn-primary" 
           onClick={() => setShowUpload(!showUpload)}
+          disabled={isUploading}
         >
           {showUpload ? <X size={18} /> : <Plus size={18} />}
           <span className="hide-mobile">{showUpload ? 'סגור' : 'העלאה חדשה'}</span>
         </button>
       </div>
 
+      {/* Uploading Progress */}
+      {isUploading && (
+        <div className="card mb-6 text-center py-6" style={{ border: '1px solid var(--color-primary-light)' }}>
+          <div className="flex flex-col items-center gap-3">
+            <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid var(--color-primary-light)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+            <span className="font-semibold text-sm">{uploadProgress}</span>
+            <span className="text-xs text-secondary">נא לא לסגור את הדפדפן</span>
+          </div>
+        </div>
+      )}
+
       {/* Upload Area */}
-      {showUpload && (
+      {showUpload && !isUploading && (
         <div className="card mb-6 animate-slide-up">
           <h3 className="section-title">העלאת קובץ חדש</h3>
           
@@ -309,7 +457,7 @@ export default function MediaUpload() {
               color: '#EF4444' 
             }}
           >
-            <span>⚠️ <strong>שים לב:</strong> העלאה זו מיועדת לדיווח חריג (כמו נפיחות, הגבלת תנועה פתאומית או כאב חריג) ולא לתיעוד שגרתי של ביצוע התרגילים בבית.</span>
+            <span>⚠️ <strong>שים לב:</strong> העלאה זו מיועדת לדיווח חריג (כמו נפיחות, הגבלת תנועה פתאומית או כאב חריג) ולא לתיעוד שגרתי.</span>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
@@ -425,124 +573,124 @@ export default function MediaUpload() {
         }}
         className="custom-scrollbar"
       >
-        {sortedUploads.map((file, i) => (
-          <div
-            key={file.id}
-            className="card card-compact card-hover animate-fade-in-up"
-            onClick={() => setActiveMedia(file)}
-            style={{ 
-              animationDelay: `${i * 60}ms`,
-              display: 'flex',
-              flexDirection: 'column',
-              padding: 0,
-              overflow: 'hidden',
-              height: '240px',
-              cursor: 'pointer'
-            }}
-          >
-            {/* Thumbnail Box */}
-            <div style={{ width: '100%', height: '120px', overflow: 'hidden', position: 'relative', background: 'var(--bg-tertiary)' }}>
-              {renderThumbnail(file)}
-              
-              {/* Type Badge */}
-              <span className="badge" style={{
-                position: 'absolute',
-                bottom: 'var(--space-2)',
-                left: 'var(--space-2)',
-                background: file.type === 'image' ? 'rgba(8,145,178,0.9)' : 'rgba(139,92,246,0.9)',
-                color: 'white',
-                fontSize: '10px',
-                padding: '2px 6px',
-                zIndex: 1
-              }}>
-                {file.type === 'image' ? 'תמונה' : 'וידאו'}
-              </span>
-
-              {/* Action Edit Button */}
-              <button
-                type="button"
-                className="btn btn-icon btn-ghost"
-                onClick={(e) => handleEditClick(file, e)}
-                style={{
-                  position: 'absolute',
-                  top: 'var(--space-2)',
-                  right: 'calc(var(--space-2) + 32px)',
-                  width: 28,
-                  height: 28,
-                  background: 'rgba(2, 132, 199, 0.95)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: 'var(--shadow-sm)',
-                  zIndex: 2
-                }}
-                title="ערוך פרטים"
-              >
-                <Pencil size={12} />
-              </button>
-
-              {/* Action Delete Button */}
-              <button
-                type="button"
-                className="btn btn-icon btn-ghost"
-                onClick={(e) => handleDelete(file.id, e)}
-                style={{
-                  position: 'absolute',
-                  top: 'var(--space-2)',
-                  right: 'var(--space-2)',
-                  width: 28,
-                  height: 28,
-                  background: 'rgba(239, 68, 68, 0.95)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: 'var(--shadow-sm)',
-                  zIndex: 2
-                }}
-                title="מחק קובץ"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-
-            {/* Info details */}
-            <div style={{ padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
-              <div style={{ minWidth: 0 }}>
-                <div className="font-semibold text-xs truncate" style={{ color: 'var(--text-primary)' }}>{file.title || file.name}</div>
+        {sortedUploads.length === 0 ? (
+          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-tertiary)' }}>
+            אין עדיין קבצים שהועלו.
+          </div>
+        ) : (
+          sortedUploads.map((file, i) => (
+            <div
+              key={file.id}
+              className="card card-compact card-hover animate-fade-in-up"
+              onClick={() => setActiveMedia(file)}
+              style={{ 
+                animationDelay: `${i * 60}ms`,
+                display: 'flex',
+                flexDirection: 'column',
+                padding: 0,
+                overflow: 'hidden',
+                height: '240px',
+                cursor: 'pointer'
+              }}
+            >
+              <div style={{ width: '100%', height: '120px', overflow: 'hidden', position: 'relative', background: 'var(--bg-tertiary)' }}>
+                {renderThumbnail(file)}
                 
-                {/* Exercise Association Badge */}
-                {file.exerciseId && (() => {
-                  const ex = mockExercises.find(e => e.id === file.exerciseId);
-                  return ex ? (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', background: 'rgba(13,148,136,0.1)', color: 'var(--color-teal-light)', fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', marginTop: '4px' }}>
-                      👟 {ex.nameHe}
-                    </div>
-                  ) : null;
-                })()}
+                <span className="badge" style={{
+                  position: 'absolute',
+                  bottom: 'var(--space-2)',
+                  left: 'var(--space-2)',
+                  background: file.type === 'image' ? 'rgba(8,145,178,0.9)' : 'rgba(139,92,246,0.9)',
+                  color: 'white',
+                  fontSize: '10px',
+                  padding: '2px 6px',
+                  zIndex: 1
+                }}>
+                  {file.type === 'image' ? 'תמונה' : 'וידאו'}
+                </span>
 
-                <div className="text-secondary truncate mt-1" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  {file.note ? (
-                    <>
-                      <MessageSquare size={10} style={{ flexShrink: 0 }} />
-                      <span className="truncate">{file.note}</span>
-                    </>
-                  ) : (
-                    <span className="italic text-muted">אין הערה</span>
-                  )}
+                <button
+                  type="button"
+                  className="btn btn-icon btn-ghost"
+                  onClick={(e) => handleEditClick(file, e)}
+                  style={{
+                    position: 'absolute',
+                    top: 'var(--space-2)',
+                    right: 'calc(var(--space-2) + 32px)',
+                    width: 28,
+                    height: 28,
+                    background: 'rgba(2, 132, 199, 0.95)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: 'var(--shadow-sm)',
+                    zIndex: 2
+                  }}
+                  title="ערוך פרטים"
+                >
+                  <Pencil size={12} />
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-icon btn-ghost"
+                  onClick={(e) => handleDelete(file.id, e)}
+                  style={{
+                    position: 'absolute',
+                    top: 'var(--space-2)',
+                    right: 'var(--space-2)',
+                    width: 28,
+                    height: 28,
+                    background: 'rgba(239, 68, 68, 0.95)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: 'var(--shadow-sm)',
+                    zIndex: 2
+                  }}
+                  title="מחק קובץ"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+
+              <div style={{ padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="font-semibold text-xs truncate" style={{ color: 'var(--text-primary)' }}>{file.title || file.name}</div>
+                  
+                  {file.exerciseId && (() => {
+                    const ex = mockExercises.find(e => e.id === file.exerciseId);
+                    return ex ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', background: 'rgba(13,148,136,0.1)', color: 'var(--color-teal-light)', fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', marginTop: '4px' }}>
+                        👟 {ex.nameHe}
+                      </div>
+                    ) : null;
+                  })()}
+
+                  <div className="text-secondary truncate mt-1" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {file.note ? (
+                      <>
+                        <MessageSquare size={10} style={{ flexShrink: 0 }} />
+                        <span className="truncate">{file.note}</span>
+                      </>
+                    ) : (
+                      <span className="italic text-muted">אין הערה</span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-muted text-right" style={{ fontSize: '10px', borderTop: '1px solid var(--border-color)', paddingTop: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                  {new Date(file.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </div>
               </div>
-              <div className="text-muted text-right" style={{ fontSize: '10px', borderTop: '1px solid var(--border-color)', paddingTop: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-                {new Date(file.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Media Viewer Lightbox Modal */}
@@ -560,7 +708,10 @@ export default function MediaUpload() {
             padding: 'var(--space-4)',
             direction: 'rtl'
           }}
-          onClick={() => setActiveMedia(null)}
+          onClick={() => {
+            setActiveMedia(null);
+            setIsEditing(false);
+          }}
         >
           <div 
             style={{
@@ -576,9 +727,8 @@ export default function MediaUpload() {
               boxShadow: 'var(--shadow-xl)',
               position: 'relative'
             }}
-            onClick={(e) => e.stopPropagation()} // Stop closing on content click
+            onClick={(e) => e.stopPropagation()} 
           >
-            {/* Header info */}
             <div className="flex justify-between items-center mb-4 border-b border-color pb-3">
               <div className="flex-1" style={{ minWidth: 0 }}>
                 {isEditing ? (
@@ -656,7 +806,6 @@ export default function MediaUpload() {
               </button>
             </div>
 
-            {/* Media Content */}
             <div style={{ 
               flex: 1, 
               display: 'flex', 
@@ -676,7 +825,6 @@ export default function MediaUpload() {
                   style={{ width: '100%', height: '100%', maxHeight: '50vh', objectFit: 'contain' }} 
                 />
               ) : (
-                /* Video Player */
                 <video 
                   src={getMediaSrc(activeMedia)} 
                   controls
@@ -685,7 +833,6 @@ export default function MediaUpload() {
               )}
             </div>
 
-            {/* Note info */}
             {isEditing ? (
               <div style={{ background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', marginTop: 'var(--space-4)' }}>
                 <div className="input-group">
@@ -725,10 +872,9 @@ export default function MediaUpload() {
         </div>
       )}
 
-      {/* Info footer */}
       <div className="card mt-6" style={{ borderInlineStart: '4px solid var(--color-primary)' }}>
         <p className="text-xs text-secondary" style={{ lineHeight: 1.6 }}>
-          📌 <strong>תיעוד חריג:</strong> לשונית זו מיועדת לעדכונים מיוחדים או חריגים בלבד (כגון שיתוף תמונה של נפיחות יוצאת דופן, הגבלת תנועה פתאומית, או כאב חריג). אין צורך לתעד את תרגול השגרה בבית באופן שוטף, מכיוון שהתוכנית מתבססת על סרטוני ההדרכה שצולמו בקליניקה.
+          📌 <strong>תיעוד חריג:</strong> לשונית זו מיועדת לעדכונים מיוחדים או חריגים בלבד (כגון שיתוף תמונה של נפיחות יוצאת דופן, הגבלת תנועה פתאומית, או כאב חריג).
         </p>
       </div>
     </div>

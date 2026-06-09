@@ -1,11 +1,16 @@
 // === Patient List Page ===
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { mockPatients } from '../../data/mockData';
+import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import { PatientCard, SearchBar } from '../../components/SharedComponents';
 import { UserPlus, Filter, X, Info } from 'lucide-react';
 
 export default function PatientList() {
+  const { isMockMode } = useAuth();
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filterArea, setFilterArea] = useState('all');
@@ -46,7 +51,64 @@ export default function PatientList() {
   const [targetDate, setTargetDate] = useState('2026-06-20');
   const [strengthMuscle, setStrengthMuscle] = useState('ארבע ראשי');
 
-  const areas = ['all', ...new Set(mockPatients.map(p => p.area))];
+  // Fetch patients on load
+  useEffect(() => {
+    loadPatients();
+  }, [isMockMode]);
+
+  const loadPatients = async () => {
+    if (isMockMode) {
+      setPatients(mockPatients);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'patient')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+
+      const formatted = (data || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        phone: p.phone || 'לא עודכן',
+        avatar: p.avatar || '🏃',
+        avatarBg: '#8B5CF6',
+        sport: 'פיילוט פעיל',
+        conditionHe: p.condition_name || 'שיקום פיזיותרפיה',
+        condition: 'Active Rehab Profile',
+        area: p.is_lower_limb ? 'ברך' : 'כתף',
+        areaColor: p.is_lower_limb ? '#06B6D4' : '#8B5CF6',
+        startDate: p.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        sessionsCount: 0,
+        painLevel: 4,
+        progress: 50,
+        isLowerLimb: p.is_lower_limb
+      }));
+
+      setPatients(formatted);
+    } catch (err) {
+      console.error('Error loading patients from Supabase:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNewPatientClick = () => {
+    if (!isMockMode) {
+      alert('עבור הפיילוט, יש לרשום את המטופל דרך מסך ההרשמה (Sign Up) בדף הכניסה של האפליקציה בטלפון שלו. המטופל יופיע כאן ברשימה באופן מיידי לאחר מכן!');
+      return;
+    }
+    setShowModal(true);
+  };
+
+  const areas = ['all', ...new Set(patients.map(p => p.area))];
 
   const handleAreaChange = (newArea) => {
     setArea(newArea);
@@ -144,7 +206,7 @@ export default function PatientList() {
     setStrengthMuscle('ארבע ראשי');
   };
 
-  const filtered = mockPatients.filter(p => {
+  const filtered = patients.filter(p => {
     const matchSearch = p.name.includes(search) || p.conditionHe.includes(search);
     const matchArea = filterArea === 'all' || p.area === filterArea;
     return matchSearch && matchArea;
@@ -155,9 +217,9 @@ export default function PatientList() {
       <div className="page-header">
         <div>
           <h1 className="page-title">מטופלים</h1>
-          <p className="page-subtitle">{mockPatients.length} מטופלים פעילים</p>
+          <p className="page-subtitle">{patients.length} מטופלים פעילים</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={handleNewPatientClick}>
           <UserPlus size={18} />
           <span>מטופל חדש</span>
         </button>

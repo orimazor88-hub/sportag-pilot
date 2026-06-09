@@ -1,7 +1,8 @@
 // === Patient Dashboard ===
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../services/supabaseClient';
 import { mockExercises, mockJournalEntries, mockCalendarEvents } from '../../data/mockData';
 import { StatsCard } from '../../components/SharedComponents';
 import InstallPwaBanner from '../../components/InstallPwaBanner';
@@ -17,23 +18,99 @@ import {
 } from 'lucide-react';
 
 export default function PatientDashboard() {
-  const { user } = useAuth();
+  const { user, isMockMode } = useAuth();
   const navigate = useNavigate();
   const [notificationsEnabled, setNotificationsEnabled] = useState(isNotificationEnabled());
 
-  const today = mockJournalEntries[0];
-  
-  // Get exercises from user profile or fallback
-  const rawExercises = user?.exercises || mockExercises.slice(0, 3);
-  
-  // Sort exercises by assignedDate descending so newest are first
-  const exercisesForToday = [...rawExercises].sort((a, b) => {
-    if (!a.assignedDate) return 1;
-    if (!b.assignedDate) return -1;
-    return new Date(b.assignedDate) - new Date(a.assignedDate);
-  });
-  const completedToday = exercisesForToday.filter(() => Math.random() > 0.3).length;
-  const nextSession = mockCalendarEvents.find(e => e.patientId === 'p1');
+  const [todayJournal, setTodayJournal] = useState(null);
+  const [exercises, setExercises] = useState([]);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [nextSession, setNextSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [user, isMockMode]);
+
+  const loadDashboardData = async () => {
+    if (!user) return;
+
+    if (isMockMode) {
+      setTodayJournal(mockJournalEntries[0]);
+      setExercises(mockExercises.slice(0, 3));
+      setCompletedCount(2);
+      setNextSession(mockCalendarEvents.find(e => e.patientId === 'p1'));
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // 1. Fetch Latest Journal Entry (Today)
+      const { data: journals, error: jError } = await supabase
+        .from('journals')
+        .select('*')
+        .eq('patient_id', user.id)
+        .order('date', { ascending: false });
+
+      if (!jError && journals) {
+        if (journals.length > 0) {
+          const j = journals[0];
+          setTodayJournal({
+            painLevel: j.pain_level,
+            mood: j.mood,
+            activity: j.activity,
+            notes: j.notes
+          });
+        }
+        setCompletedCount(journals.filter(j => j.activity !== 'מנוחה').length);
+      }
+
+      // 2. Fetch Exercises
+      const { data: dbExercises, error: exError } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('patient_id', user.id)
+        .order('assigned_date', { ascending: false });
+
+      if (!exError && dbExercises) {
+        setExercises(dbExercises.map(e => ({
+          id: e.id,
+          name: e.name,
+          nameHe: e.name_he,
+          category: e.category,
+          categoryColor: e.category === 'ברך' ? '#06B6D4' : '#8B5CF6',
+          description: e.description,
+          sets: e.sets,
+          reps: e.reps,
+          holdTime: e.hold_time,
+          frequency: e.frequency,
+          difficulty: e.difficulty,
+          assignedDate: e.assigned_date
+        })));
+      }
+
+      // 3. Fetch Next Session
+      const { data: dbSessions, error: sError } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('patient_id', user.id)
+        .gte('date', new Date().toISOString())
+        .order('date', { ascending: true })
+        .limit(1);
+
+      if (!sError && dbSessions && dbSessions.length > 0) {
+        setNextSession({
+          date: dbSessions[0].date
+        });
+      }
+    } catch (err) {
+      console.error('Error loading dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getPainEmoji = (level) => {
     if (level <= 2) return '😊';
@@ -53,6 +130,15 @@ export default function PatientDashboard() {
     unlockAudioContext();
     scheduleMockReminder('הגיע הזמן לתרגול היומי שלך! 🏋️‍♂️');
   };
+
+  if (loading) {
+    return (
+      <div className="empty-state" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid var(--color-primary-light)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite', marginBottom: '12px' }} />
+        <h3 className="text-secondary text-sm">טוען נתונים...</h3>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -78,13 +164,13 @@ export default function PatientDashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div style={{ fontSize: '3rem' }}>
-              {today ? getPainEmoji(today.painLevel) : '🤔'}
+              {todayJournal ? getPainEmoji(todayJournal.painLevel) : '🤔'}
             </div>
             <div>
               <h3 className="font-semibold">איך אתה מרגיש היום?</h3>
-              {today ? (
+              {todayJournal ? (
                 <p className="text-sm text-secondary">
-                  דרגת כאב: {today.painLevel}/10 • מצב רוח: {today.mood}
+                  דרגת כאב: {todayJournal.painLevel}/10 • מצב רוח: {todayJournal.mood}
                 </p>
               ) : (
                 <p className="text-sm text-secondary">לחץ כדי לעדכן את המעקב היומי שלך</p>
@@ -99,13 +185,13 @@ export default function PatientDashboard() {
       <div className="stats-grid animate-fade-in-up stagger-2">
         <StatsCard
           icon={TrendingDown}
-          value={today?.painLevel || '-'}
+          value={todayJournal?.painLevel || '-'}
           label="דרגת כאב"
           color="#E22279"
         />
         <StatsCard
           icon={Dumbbell}
-          value={`${completedToday}/${exercisesForToday.length}`}
+          value={`${todayJournal ? 1 : 0}/${exercises.length}`}
           label="תרגילים היום"
           color="#10B981"
         />
@@ -117,7 +203,7 @@ export default function PatientDashboard() {
         />
         <StatsCard
           icon={Smile}
-          value={`${mockJournalEntries.filter(e => e.exercisesCompleted).length}/${mockJournalEntries.length}`}
+          value={`${completedCount} ימים`}
           label="ימי תרגול"
           color="#8B5CF6"
         />
@@ -135,7 +221,7 @@ export default function PatientDashboard() {
           </button>
         </div>
         <div className="flex flex-col gap-3">
-          {exercisesForToday.map((ex, i) => {
+          {exercises.map((ex, i) => {
             const isNew = ex.assignedDate && 
               (new Date('2026-06-07') - new Date(ex.assignedDate)) / (1000 * 60 * 60 * 24) <= 3;
             return (
