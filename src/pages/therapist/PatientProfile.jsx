@@ -88,7 +88,7 @@ export default function PatientProfile() {
     }
   };
 
-  const { uploads, isMockMode } = useAuth();
+  const { user, uploads, isMockMode } = useAuth();
   const [patient, setPatient] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [exercises, setExercises] = useState([]);
@@ -103,6 +103,185 @@ export default function PatientProfile() {
   const [editedTargetDate, setEditedTargetDate] = useState(null);
   const [editedStrengthMuscle, setEditedStrengthMuscle] = useState(null);
 
+  // Add exercise modal states
+  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
+  const [exNameHe, setExNameHe] = useState('');
+  const [exNameEn, setExNameEn] = useState('');
+  const [exCategory, setExCategory] = useState('knee');
+  const [exSets, setExSets] = useState(3);
+  const [exReps, setExReps] = useState(10);
+  const [exHoldTime, setExHoldTime] = useState('');
+  const [exFrequency, setExFrequency] = useState('פעם ביום');
+  const [exDifficulty, setExDifficulty] = useState('בינוני');
+  const [exDescription, setExDescription] = useState('');
+  const [savingExercise, setSavingExercise] = useState(false);
+
+  // Add session modal states
+  const [showAddSessionModal, setShowAddSessionModal] = useState(false);
+  const [sessDate, setSessDate] = useState(new Date().toISOString().slice(0, 16)); // YYYY-MM-DDTHH:MM
+  const [sessDuration, setSessDuration] = useState(45);
+  const [sessType, setSessType] = useState('פיזיותרפיה');
+  const [sessSummary, setSessSummary] = useState('');
+  const [savingSession, setSavingSession] = useState(false);
+
+  const getCategoryColor = (cat) => {
+    switch (cat) {
+      case 'knee':
+      case 'ברך': return '#06B6D4';
+      case 'shoulder':
+      case 'כתף': return '#8B5CF6';
+      case 'back':
+      case 'גב': return '#F59E0B';
+      case 'neck':
+      case 'צוואר': return '#EC4899';
+      case 'hip':
+      case 'ירך': return '#10B981';
+      case 'ankle':
+      case 'קרסול': return '#EF4444';
+      default: return '#8B5CF6';
+    }
+  };
+
+  const handleAddExercise = async (e) => {
+    e.preventDefault();
+    if (!exNameHe) {
+      alert('נא להזין שם תרגיל בעברית');
+      return;
+    }
+
+    setSavingExercise(true);
+
+    try {
+      const newEx = {
+        id: isMockMode ? `ex-${Date.now()}` : undefined,
+        name: exNameEn || exNameHe,
+        nameHe: exNameHe,
+        category: exCategory,
+        categoryColor: getCategoryColor(exCategory),
+        description: exDescription,
+        sets: Number(exSets),
+        reps: Number(exReps),
+        holdTime: exHoldTime ? Number(exHoldTime) : null,
+        frequency: exFrequency,
+        difficulty: exDifficulty,
+        assignedDate: new Date().toISOString().slice(0, 10)
+      };
+
+      if (isMockMode) {
+        setExercises(prev => [newEx, ...prev]);
+        setShowAddExerciseModal(false);
+        // Reset form
+        setExNameHe('');
+        setExNameEn('');
+        setExCategory('knee');
+        setExSets(3);
+        setExReps(10);
+        setExHoldTime('');
+        setExFrequency('פעם ביום');
+        setExDifficulty('בינוני');
+        setExDescription('');
+        alert('התרגיל התווסף בהצלחה (מצב הדגמה)!');
+      } else {
+        const { error } = await supabase
+          .from('exercises')
+          .insert({
+            patient_id: id,
+            name: exNameEn || exNameHe,
+            name_he: exNameHe,
+            category: exCategory,
+            description: exDescription,
+            sets: Number(exSets),
+            reps: Number(exReps),
+            hold_time: exHoldTime ? Number(exHoldTime) : null,
+            frequency: exFrequency,
+            difficulty: exDifficulty
+          });
+
+        if (error) throw error;
+
+        await loadPatientData();
+        setShowAddExerciseModal(false);
+        // Reset form
+        setExNameHe('');
+        setExNameEn('');
+        setExCategory('knee');
+        setExSets(3);
+        setExReps(10);
+        setExHoldTime('');
+        setExFrequency('פעם ביום');
+        setExDifficulty('בינוני');
+        setExDescription('');
+        alert('התרגיל שויך בהצלחה למטופל!');
+      }
+    } catch (err) {
+      console.error('Error adding exercise:', err);
+      alert('שגיאה בשמירת התרגיל: ' + err.message);
+    } finally {
+      setSavingExercise(false);
+    }
+  };
+
+  const handleAddSession = async (e) => {
+    e.preventDefault();
+    if (!sessSummary) {
+      alert('נא להזין סיכום טיפול');
+      return;
+    }
+
+    setSavingSession(true);
+
+    try {
+      const newSess = {
+        id: isMockMode ? `sess-${Date.now()}` : undefined,
+        patientId: id,
+        date: new Date(sessDate).toISOString(),
+        duration: Number(sessDuration),
+        type: sessType,
+        summary: sessSummary,
+        recorded: false
+      };
+
+      if (isMockMode) {
+        setSessions(prev => [newSess, ...prev]);
+        setShowAddSessionModal(false);
+        // Reset form
+        setSessDate(new Date().toISOString().slice(0, 16));
+        setSessDuration(45);
+        setSessType('פיזיותרפיה');
+        setSessSummary('');
+        alert('הטיפול התווסף בהצלחה (מצב הדגמה)!');
+      } else {
+        const { error } = await supabase
+          .from('sessions')
+          .insert({
+            patient_id: id,
+            therapist_id: user?.id || id, // fallback
+            date: new Date(sessDate).toISOString(),
+            duration: Number(sessDuration),
+            type: sessType,
+            summary: sessSummary,
+            recorded: false
+          });
+
+        if (error) throw error;
+
+        await loadPatientData();
+        setShowAddSessionModal(false);
+        // Reset form
+        setSessDate(new Date().toISOString().slice(0, 16));
+        setSessDuration(45);
+        setSessType('פיזיותרפיה');
+        setSessSummary('');
+        alert('הטיפול נרשם בהצלחה במערכת!');
+      }
+    } catch (err) {
+      console.error('Error adding session:', err);
+      alert('שגיאה ברישום הטיפול: ' + err.message);
+    } finally {
+      setSavingSession(false);
+    }
+  };
+
   useEffect(() => {
     loadPatientData();
   }, [id, isMockMode, uploads]);
@@ -112,7 +291,10 @@ export default function PatientProfile() {
       const p = mockPatients.find(x => x.id === id);
       setPatient(p);
       setSessions(mockSessions.filter(s => s.patientId === id));
-      setExercises(mockExercises.slice(0, 3));
+      setExercises(mockExercises.map(e => ({
+        ...e,
+        categoryColor: getCategoryColor(e.category)
+      })));
       setJournalHistory(mockJournalEntries);
       setPatientMedia(uploads);
       setLoading(false);
@@ -160,6 +342,7 @@ export default function PatientProfile() {
         name: e.name,
         nameHe: e.name_he,
         category: e.category,
+        categoryColor: getCategoryColor(e.category),
         description: e.description,
         sets: e.sets,
         reps: e.reps,
@@ -261,7 +444,7 @@ export default function PatientProfile() {
 
       setPatient(formattedPatient);
       setSessions(formattedSessions);
-      setExercises(formattedExercises.slice(0, 3));
+      setExercises(formattedExercises);
       setJournalHistory(formattedJournals);
       setPatientMedia(formattedMedia);
     } catch (err) {
@@ -771,13 +954,32 @@ export default function PatientProfile() {
 
       {activeTab === 'sessions' && (
         <div className="animate-fade-in">
+          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+            <h3 className="section-title mb-0">סיכומי טיפול וביקורים</h3>
+            <div className="flex gap-2">
+              <button 
+                type="button"
+                className="btn btn-accent btn-sm"
+                onClick={() => navigate('/therapist/record')}
+              >
+                🎙️ הקלט טיפול (AI)
+              </button>
+              <button 
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowAddSessionModal(true)}
+              >
+                ➕ רשום טיפול ידני
+              </button>
+            </div>
+          </div>
           {sessions.length > 0 ? sessions.map((session, i) => (
             <div key={session.id} className="card mb-4" style={{ animationDelay: `${i * 80}ms` }}>
               <div className="flex justify-between items-center mb-3">
                 <div className="flex items-center gap-2">
                   <Calendar size={16} style={{ color: 'var(--color-primary-light)' }} />
                   <span className="font-semibold text-sm">
-                    {new Date(session.date).toLocaleDateString('he-IL')}
+                    {new Date(session.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -792,6 +994,7 @@ export default function PatientProfile() {
             <div className="empty-state">
               <FileText size={48} />
               <h3 className="mt-4">אין סיכומי טיפולים</h3>
+              <p className="text-secondary mt-2">הקלט או רשום טיפול חדש כדי להתחיל לתעד את הפיילוט.</p>
             </div>
           )}
         </div>
@@ -799,11 +1002,29 @@ export default function PatientProfile() {
 
       {activeTab === 'exercises' && (
         <div className="animate-fade-in">
-          <div className="flex flex-col gap-3">
-            {exercises.map(ex => (
-              <ExerciseCard key={ex.id} exercise={ex} />
-            ))}
+          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+            <h3 className="section-title mb-0">תוכנית תרגילים ששוייכה למטופל</h3>
+            <button 
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowAddExerciseModal(true)}
+            >
+              ➕ שייך תרגיל חדש
+            </button>
           </div>
+          {exercises.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {exercises.map(ex => (
+                <ExerciseCard key={ex.id} exercise={ex} />
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <Dumbbell size={48} />
+              <h3 className="mt-4">אין תרגילים ששוייכו</h3>
+              <p className="text-secondary mt-2">לחץ על הכפתור למעלה כדי לשייך תרגיל חדש.</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1173,6 +1394,311 @@ export default function PatientProfile() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Assign Exercise Modal */}
+      {showAddExerciseModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-4)',
+            direction: 'rtl'
+          }}
+          onClick={() => setShowAddExerciseModal(false)}
+        >
+          <div 
+            style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-xl)',
+              padding: 'var(--space-5)',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-xl)',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4 border-b border-color pb-3">
+              <h3 className="font-bold text-lg text-primary flex items-center gap-2">
+                <Dumbbell size={20} style={{ color: 'var(--color-primary-light)' }} />
+                שיוך תרגיל חדש למטופל
+              </h3>
+              <button 
+                type="button"
+                className="btn btn-icon btn-ghost" 
+                onClick={() => setShowAddExerciseModal(false)}
+                style={{ width: 32, height: 32 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddExercise} className="flex flex-col gap-4">
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">שם התרגיל (עברית) *</label>
+                <input 
+                  type="text" 
+                  className="input" 
+                  value={exNameHe} 
+                  onChange={e => setExNameHe(e.target.value)} 
+                  placeholder="למשל: סקוואט כנגד קיר" 
+                  required 
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">שם התרגיל (אנגלית / רפואי)</label>
+                <input 
+                  type="text" 
+                  className="input" 
+                  value={exNameEn} 
+                  onChange={e => setExNameEn(e.target.value)} 
+                  placeholder="למשל: Wall squat" 
+                />
+              </div>
+
+              <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+                <div className="input-group">
+                  <label className="input-label text-xs font-semibold">קטגוריית גוף</label>
+                  <select 
+                    className="input" 
+                    value={exCategory} 
+                    onChange={e => setExCategory(e.target.value)}
+                  >
+                    <option value="knee">🦵 ברך</option>
+                    <option value="shoulder">💪 כתף</option>
+                    <option value="back">🔙 גב</option>
+                    <option value="neck">🧣 צוואר</option>
+                    <option value="hip">🦴 ירך</option>
+                    <option value="ankle">🦶 קרסול</option>
+                    <option value="general">🏃 כללי</option>
+                  </select>
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label text-xs font-semibold">דרגת קושי</label>
+                  <select 
+                    className="input" 
+                    value={exDifficulty} 
+                    onChange={e => setExDifficulty(e.target.value)}
+                  >
+                    <option value="קל">קל</option>
+                    <option value="בינוני">בינוני</option>
+                    <option value="קשה">קשה</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid-3" style={{ gap: 'var(--space-2)' }}>
+                <div className="input-group">
+                  <label className="input-label text-xs font-semibold">סטים</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    className="input" 
+                    value={exSets} 
+                    onChange={e => setExSets(Number(e.target.value))} 
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label text-xs font-semibold">חזרות</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    className="input" 
+                    value={exReps} 
+                    onChange={e => setExReps(Number(e.target.value))} 
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label text-xs font-semibold">החזקה (שניות)</label>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    className="input" 
+                    value={exHoldTime} 
+                    onChange={e => setExHoldTime(e.target.value)} 
+                    placeholder="ללא"
+                  />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">תדירות ביצוע</label>
+                <input 
+                  type="text" 
+                  className="input" 
+                  value={exFrequency} 
+                  onChange={e => setExFrequency(e.target.value)} 
+                  placeholder="למשל: פעם ביום, 3 פעמים בשבוע" 
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">הנחיות לביצוע ודגשים קליניים</label>
+                <textarea 
+                  className="input" 
+                  rows="3" 
+                  value={exDescription} 
+                  onChange={e => setExDescription(e.target.value)} 
+                  placeholder="למשל: לשמור על ברכיים מקבילות, לרדת ל-90 מעלות ולהחזיק..."
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-4 border-t border-color pt-3">
+                <button 
+                  type="button" 
+                  className="btn btn-ghost" 
+                  onClick={() => setShowAddExerciseModal(false)}
+                  disabled={savingExercise}
+                >
+                  ביטול
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={savingExercise}
+                >
+                  {savingExercise ? 'שומר...' : 'שייך תרגיל'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Log Session Modal */}
+      {showAddSessionModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-4)',
+            direction: 'rtl'
+          }}
+          onClick={() => setShowAddSessionModal(false)}
+        >
+          <div 
+            style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-xl)',
+              padding: 'var(--space-5)',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-xl)',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4 border-b border-color pb-3">
+              <h3 className="font-bold text-lg text-primary flex items-center gap-2">
+                <FileText size={20} style={{ color: 'var(--color-primary-light)' }} />
+                רישום טיפול ידני
+              </h3>
+              <button 
+                type="button"
+                className="btn btn-icon btn-ghost" 
+                onClick={() => setShowAddSessionModal(false)}
+                style={{ width: 32, height: 32 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSession} className="flex flex-col gap-4">
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">תאריך ושעה *</label>
+                <input 
+                  type="datetime-local" 
+                  className="input" 
+                  value={sessDate} 
+                  onChange={e => setSessDate(e.target.value)} 
+                  required 
+                />
+              </div>
+
+              <div className="grid-2" style={{ gap: 'var(--space-3)' }}>
+                <div className="input-group">
+                  <label className="input-label text-xs font-semibold">משך הטיפול (דקות)</label>
+                  <input 
+                    type="number" 
+                    min="5" 
+                    className="input" 
+                    value={sessDuration} 
+                    onChange={e => setSessDuration(Number(e.target.value))} 
+                    required 
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label text-xs font-semibold">סוג הטיפול</label>
+                  <input 
+                    type="text" 
+                    className="input" 
+                    value={sessType} 
+                    onChange={e => setSessType(e.target.value)} 
+                    placeholder="למשל: פיזיותרפיה, שיקום, שיקום ספורט" 
+                    required 
+                  />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">סיכום טיפול והנחיות המשך *</label>
+                <textarea 
+                  className="input" 
+                  rows="6" 
+                  value={sessSummary} 
+                  onChange={e => setSessSummary(e.target.value)} 
+                  placeholder="כתוב כאן את סיכום המפגש הקליני, המדדים שנמדדו, והנחיות לתרגול בבית..."
+                  required 
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-4 border-t border-color pt-3">
+                <button 
+                  type="button" 
+                  className="btn btn-ghost" 
+                  onClick={() => setShowAddSessionModal(false)}
+                  disabled={savingSession}
+                >
+                  ביטול
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={savingSession}
+                >
+                  {savingSession ? 'רושם טיפול...' : 'רשום טיפול'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

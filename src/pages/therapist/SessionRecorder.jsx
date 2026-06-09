@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { ConsentModal, WaveformAnimation, LoadingSpinner } from '../../components/SharedComponents';
 import { simulateTranscription } from '../../services/mockAIService';
 import { mockPatients } from '../../data/mockData';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 import {
   Mic, MicOff, Square, Pause, Play, CheckCircle,
   Copy, Download, ArrowRight, User, Clock, FileText, Sparkles, Activity
@@ -11,6 +13,9 @@ import {
 
 export default function SessionRecorder() {
   const navigate = useNavigate();
+  const { user, isMockMode } = useAuth();
+  const [patients, setPatients] = useState([]);
+  const [loadingPatients, setLoadingPatients] = useState(true);
   const [step, setStep] = useState('select'); // select, consent, recording, processing, result
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -27,6 +32,45 @@ export default function SessionRecorder() {
   const [walking, setWalking] = useState(7);
   const [stairs, setStairs] = useState(6);
   const [running, setRunning] = useState(4);
+
+  useEffect(() => {
+    loadPatients();
+  }, [isMockMode]);
+
+  const loadPatients = async () => {
+    if (isMockMode) {
+      setPatients(mockPatients);
+      setLoadingPatients(false);
+      return;
+    }
+    try {
+      setLoadingPatients(true);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'patient');
+      if (error) throw error;
+      
+      setPatients((data || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        phone: p.phone || 'לא עודכן',
+        avatar: p.avatar || '🏃',
+        avatarBg: '#8B5CF6',
+        sport: 'פיילוט פעיל',
+        conditionHe: p.condition_name || 'שיקום פיזיותרפיה',
+        condition: 'Active Rehab Profile',
+        area: p.is_lower_limb ? 'גפה תחתונה' : 'גפה עליונה',
+        areaColor: p.is_lower_limb ? '#06B6D4' : '#8B5CF6',
+        isLowerLimb: p.is_lower_limb
+      })));
+    } catch (err) {
+      console.error('Error loading patients:', err);
+    } finally {
+      setLoadingPatients(false);
+    }
+  };
 
   useEffect(() => {
     if (isRecording && !isPaused) {
@@ -99,24 +143,63 @@ export default function SessionRecorder() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (selectedPatient) {
-      const patient = mockPatients.find(p => p.id === selectedPatient.id);
-      if (patient) {
-        if (!patient.metricsHistory) {
-          patient.metricsHistory = [];
+      if (isMockMode) {
+        const patient = mockPatients.find(p => p.id === selectedPatient.id);
+        if (patient) {
+          if (!patient.metricsHistory) {
+            patient.metricsHistory = [];
+          }
+          const newMetric = {
+            date: new Date().toISOString().slice(0, 10),
+            rom: Number(rom),
+            strength: Number(strength),
+            ...(patient.isLowerLimb ? {
+              walking: Number(walking),
+              stairs: Number(stairs),
+              running: Number(running)
+            } : {})
+          };
+          patient.metricsHistory.push(newMetric);
         }
-        const newMetric = {
-          date: new Date().toISOString().slice(0, 10),
-          rom: Number(rom),
-          strength: Number(strength),
-          ...(patient.isLowerLimb ? {
-            walking: Number(walking),
-            stairs: Number(stairs),
-            running: Number(running)
-          } : {})
-        };
-        patient.metricsHistory.push(newMetric);
+      } else {
+        try {
+          // 1. Insert session record
+          const { error: sessError } = await supabase
+            .from('sessions')
+            .insert({
+              patient_id: selectedPatient.id,
+              therapist_id: user?.id || selectedPatient.id, // fallback
+              date: new Date().toISOString(),
+              duration: Math.ceil(timer / 60) || 45,
+              type: 'הקלטת AI',
+              summary: summary,
+              recorded: true
+            });
+          if (sessError) throw sessError;
+
+          // 2. Insert metrics inside journals table
+          const { error: journError } = await supabase
+            .from('journals')
+            .insert({
+              patient_id: selectedPatient.id,
+              date: new Date().toISOString().slice(0, 10),
+              pain_level: 4, // Default/fallback
+              activity: 'טיפול פיזיותרפיה (AI)',
+              notes: `מדדים קליניים שנמדדו: ROM: ${rom}°, כוח שריר: ${strength}/5.` + 
+                (selectedPatient.isLowerLimb ? ` הליכה: ${walking}/10, מדרגות: ${stairs}/10, ריצה: ${running}/10.` : ''),
+              walking_score: selectedPatient.isLowerLimb ? Number(walking) : null,
+              stairs_score: selectedPatient.isLowerLimb ? Number(stairs) : null,
+              running_score: selectedPatient.isLowerLimb ? Number(running) : null,
+            });
+          if (journError) throw journError;
+
+          alert('הטיפול והמדדים נשמרו בהצלחה במערכת!');
+        } catch (err) {
+          console.error('Error saving recorded session:', err);
+          alert('שגיאה בשמירת הטיפול: ' + err.message);
+        }
       }
     }
     navigate(`/therapist/patients/${selectedPatient?.id || 'p1'}`);
@@ -147,26 +230,37 @@ export default function SessionRecorder() {
       {step === 'select' && (
         <div className="animate-fade-in-up">
           <h2 className="section-title">בחר מטופל</h2>
-          <div className="patients-grid">
-            {mockPatients.map((patient, i) => (
-              <button
-                key={patient.id}
-                className="card card-hover card-compact animate-fade-in-up"
-                style={{ animationDelay: `${i * 60}ms`, cursor: 'pointer', border: 'none', textAlign: 'start', width: '100%' }}
-                onClick={() => handleSelectPatient(patient)}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="avatar" style={{ background: patient.avatarBg }}>
-                    {patient.avatar}
+          {loadingPatients ? (
+            <div className="empty-state py-12">
+              <LoadingSpinner />
+              <p className="text-secondary mt-2">טוען רשימת מטופלים...</p>
+            </div>
+          ) : patients.length > 0 ? (
+            <div className="patients-grid">
+              {patients.map((patient, i) => (
+                <button
+                  key={patient.id}
+                  className="card card-hover card-compact animate-fade-in-up"
+                  style={{ animationDelay: `${i * 60}ms`, cursor: 'pointer', border: 'none', textAlign: 'start', width: '100%' }}
+                  onClick={() => handleSelectPatient(patient)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="avatar" style={{ background: patient.avatarBg }}>
+                      {patient.avatar}
+                    </div>
+                    <div>
+                      <div className="font-semibold">{patient.name}</div>
+                      <div className="text-xs text-secondary">{patient.conditionHe}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-semibold">{patient.name}</div>
-                    <div className="text-xs text-secondary">{patient.conditionHe}</div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state py-12">
+              <p className="text-secondary">אין מטופלים רשומים כרגע במערכת.</p>
+            </div>
+          )}
         </div>
       )}
 
