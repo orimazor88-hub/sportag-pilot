@@ -540,8 +540,8 @@ export default function PatientList() {
                 <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>
                   ביטול
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  שמור ופתח כרטיס
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? 'שומר...' : 'שמור ופתח כרטיס'}
                 </button>
               </div>
             </form>
