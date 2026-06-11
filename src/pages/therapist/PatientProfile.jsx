@@ -325,11 +325,18 @@ export default function PatientProfile() {
         setSessSummary('');
         alert('הטיפול התווסף בהצלחה (מצב הדגמה)!');
       } else {
+        const { data: authData } = await supabase.auth.getUser();
+        const activeTherapistId = authData?.user?.id || user?.id;
+
+        if (!activeTherapistId) {
+          throw new Error('לא נמצא מזהה מטפל מחובר. אנא התחבר מחדש.');
+        }
+
         const { error } = await supabase
           .from('sessions')
           .insert({
             patient_id: id,
-            therapist_id: user?.id || id, // fallback
+            therapist_id: activeTherapistId,
             date: new Date(sessDate).toISOString(),
             duration: Number(sessDuration),
             type: sessType,

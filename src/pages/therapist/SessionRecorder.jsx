@@ -329,12 +329,19 @@ export default function SessionRecorder() {
         }
       } else {
         try {
+          const { data: authData } = await supabase.auth.getUser();
+          const activeTherapistId = authData?.user?.id || user?.id;
+
+          if (!activeTherapistId) {
+            throw new Error('לא נמצא מזהה מטפל מחובר. אנא התחבר מחדש.');
+          }
+
           // 1. Insert session record
           const { error: sessError } = await supabase
             .from('sessions')
             .insert({
               patient_id: selectedPatient.id,
-              therapist_id: user?.id || selectedPatient.id, // fallback
+              therapist_id: activeTherapistId,
               date: new Date().toISOString(),
               duration: Math.ceil(timer / 60) || 45,
               type: 'הקלטת AI',
