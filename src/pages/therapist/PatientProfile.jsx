@@ -824,6 +824,10 @@ export default function PatientProfile() {
             <h1 className="text-2xl font-bold">{patient.name}</h1>
             <p className="text-secondary">{patient.conditionHe}</p>
             <p className="text-xs text-muted mt-1">{patient.condition}</p>
+            <div className="text-xs text-secondary mt-2 flex flex-wrap gap-x-4 gap-y-1" style={{ opacity: 0.85 }}>
+              <span>📧 {patient.email}</span>
+              <span>📞 {patient.phone}</span>
+            </div>
             <div className="flex gap-2 mt-2 flex-wrap">
               <span className="badge" style={{ background: `${patient.areaColor}20`, color: patient.areaColor }}>
                 {patient.area}
