@@ -195,10 +195,19 @@ export default function SessionRecorder() {
 
   const handleSelectPatient = (patient) => {
     setSelectedPatient(patient);
-    setShowConsent(true);
+    const hasConsent = localStorage.getItem('sportag_mic_consent_granted') === 'true';
+    if (hasConsent) {
+      setTranscriptionText('');
+      transcriptionRef.current = '';
+      setStep('recording');
+      setIsRecording(true);
+    } else {
+      setShowConsent(true);
+    }
   };
 
   const handleConsentAccept = () => {
+    localStorage.setItem('sportag_mic_consent_granted', 'true');
     setShowConsent(false);
     setTranscriptionText('');
     transcriptionRef.current = '';
