@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { mockExercises } from '../../data/mockData';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
 import {
   Camera, Upload, Video, X, Plus, MessageSquare, Trash2, ArrowUpDown, Play, Pencil
 } from 'lucide-react';
@@ -186,15 +186,41 @@ export default function MediaUpload() {
           const storageFileName = `${user.id}/${Date.now()}_${randomStr}.${fileExt}`;
           const storagePath = `uploads/${storageFileName}`;
 
-          // 1. Upload file binary
-          const { error: uploadError } = await supabase.storage
-            .from('patient-media')
-            .upload(storagePath, file, {
-              cacheControl: '3600',
-              upsert: false
-            });
+          // 1. Upload file binary with XMLHttpRequest for progress tracking
+          const uploadPromise = new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const uploadUrl = `${supabaseUrl}/storage/v1/object/patient-media/${storagePath}`;
+            
+            xhr.open('POST', uploadUrl, true);
+            xhr.setRequestHeader('Authorization', `Bearer ${supabaseAnonKey}`);
+            xhr.setRequestHeader('apikey', supabaseAnonKey);
+            xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+            
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                const percent = Math.round((event.loaded / event.total) * 100);
+                setUploadProgress(`מעלה קובץ ${i + 1}/${files.length}: ${percent}%`);
+              }
+            };
+            
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+              } else {
+                try {
+                  const res = JSON.parse(xhr.responseText);
+                  reject(new Error(res.message || xhr.statusText || 'שגיאה בהעלאה'));
+                } catch (e) {
+                  reject(new Error(xhr.responseText || `שגיאה (קוד ${xhr.status})`));
+                }
+              }
+            };
+            
+            xhr.onerror = () => reject(new Error('שגיאת תקשורת ברשת'));
+            xhr.send(file);
+          });
 
-          if (uploadError) throw uploadError;
+          await uploadPromise;
 
           // 2. Get Public URL
           const { data: { publicUrl } } = supabase.storage

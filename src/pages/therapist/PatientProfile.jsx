@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { mockPatients, mockSessions, mockExercises, mockJournalEntries } from '../../data/mockData';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
 import { ExerciseCard } from '../../components/SharedComponents';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import {
@@ -116,6 +116,7 @@ export default function PatientProfile() {
   const [exDescription, setExDescription] = useState('');
   const [savingExercise, setSavingExercise] = useState(false);
   const [exVideoFile, setExVideoFile] = useState(null);
+  const [exUploadProgress, setExUploadProgress] = useState(0);
 
   // Add session modal states
   const [showAddSessionModal, setShowAddSessionModal] = useState(false);
@@ -168,18 +169,51 @@ export default function PatientProfile() {
           // Generate a mock blob preview URL
           uploadedVideoUrl = URL.createObjectURL(exVideoFile);
         } else {
-          // Upload to Supabase Storage
+          // Upload to Supabase Storage with XMLHttpRequest for progress tracking
           const fileName = `exercise_${Date.now()}_${exVideoFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-          const { data, error: uploadError } = await supabase.storage
-            .from('patient-media')
-            .upload(`exercises/${fileName}`, exVideoFile);
+          const storagePath = `exercises/${fileName}`;
 
-          if (uploadError) throw uploadError;
+          setExUploadProgress(1); // start progress at 1%
+          
+          const uploadPromise = new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const uploadUrl = `${supabaseUrl}/storage/v1/object/patient-media/${storagePath}`;
+            
+            xhr.open('POST', uploadUrl, true);
+            xhr.setRequestHeader('Authorization', `Bearer ${supabaseAnonKey}`);
+            xhr.setRequestHeader('apikey', supabaseAnonKey);
+            xhr.setRequestHeader('Content-Type', exVideoFile.type || 'application/octet-stream');
+            
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                const percent = Math.round((event.loaded / event.total) * 100);
+                setExUploadProgress(percent);
+              }
+            };
+            
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+              } else {
+                try {
+                  const res = JSON.parse(xhr.responseText);
+                  reject(new Error(res.message || xhr.statusText || 'שגיאה בהעלאה'));
+                } catch (e) {
+                  reject(new Error(xhr.responseText || `שגיאה (קוד ${xhr.status})`));
+                }
+              }
+            };
+            
+            xhr.onerror = () => reject(new Error('שגיאת תקשורת ברשת'));
+            xhr.send(exVideoFile);
+          });
+
+          await uploadPromise;
 
           // Get Public URL
           const { data: { publicUrl } } = supabase.storage
             .from('patient-media')
-            .getPublicUrl(`exercises/${fileName}`);
+            .getPublicUrl(storagePath);
 
           uploadedVideoUrl = publicUrl;
         }
@@ -215,6 +249,7 @@ export default function PatientProfile() {
         setExDifficulty('בינוני');
         setExDescription('');
         setExVideoFile(null);
+        setExUploadProgress(0);
         alert('התרגיל התווסף בהצלחה (מצב הדגמה)!');
       } else {
         const { error } = await supabase
@@ -248,6 +283,7 @@ export default function PatientProfile() {
         setExDifficulty('בינוני');
         setExDescription('');
         setExVideoFile(null);
+        setExUploadProgress(0);
         alert('התרגיל שויך בהצלחה למטופל!');
       }
     } catch (err) {
@@ -255,6 +291,7 @@ export default function PatientProfile() {
       alert('שגיאה בשמירת התרגיל: ' + err.message);
     } finally {
       setSavingExercise(false);
+      setExUploadProgress(0);
     }
   };
 
@@ -1670,7 +1707,7 @@ export default function PatientProfile() {
                   className="btn btn-primary"
                   disabled={savingExercise}
                 >
-                  {savingExercise ? 'שומר...' : 'שייך תרגיל'}
+                  {savingExercise ? (exUploadProgress > 0 ? `מעלה וידאו: ${exUploadProgress}%` : 'שומר...') : 'שייך תרגיל'}
                 </button>
               </div>
             </form>
