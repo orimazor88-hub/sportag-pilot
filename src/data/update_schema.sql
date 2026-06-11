@@ -106,4 +106,5 @@ VALUES ('patient-media', 'patient-media', true, 524288000)
 ON CONFLICT (id) DO UPDATE 
 SET file_size_limit = 524288000;
 
-
+-- 6. Add pain_location column to journals table to track precise pain sub-locations
+ALTER TABLE public.journals ADD COLUMN IF NOT EXISTS pain_location TEXT;

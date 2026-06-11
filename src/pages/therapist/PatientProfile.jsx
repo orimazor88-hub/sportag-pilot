@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { mockPatients, mockSessions, mockExercises, mockJournalEntries } from '../../data/mockData';
 import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
-import { ExerciseCard } from '../../components/SharedComponents';
+import { ExerciseCard, PainVisualizer, PAIN_LOCATION_MAP } from '../../components/SharedComponents';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import {
   ArrowRight, Calendar, FileText, Dumbbell, TrendingUp,
@@ -459,7 +459,8 @@ export default function PatientProfile() {
         deviceSynced: j.device_synced,
         deviceType: j.device_type,
         rom: j.rom,
-        strength: j.strength
+        strength: j.strength,
+        painLocation: j.pain_location || j.painLocation
       }));
 
       // 5. Fetch Media Uploads
@@ -566,6 +567,7 @@ export default function PatientProfile() {
     strength: { intermediate: 4, final: 5 }
   };
   const initialPain = patient.initialPainLevel || 8;
+  const latestPainLocation = journalHistory && journalHistory.length > 0 ? journalHistory[0].painLocation : null;
 
   const latestMetric = patient.metricsHistory && patient.metricsHistory.length > 0
     ? patient.metricsHistory[patient.metricsHistory.length - 1]
@@ -944,33 +946,45 @@ export default function PatientProfile() {
             </div>
           </div>
 
-          {/* Pain Chart */}
-          <div className="card mb-4 animate-fade-in-up stagger-2">
-            <h3 className="section-title">מגמת כאב (14 ימים)</h3>
-            <div style={{ width: '100%', height: 200 }}>
-              <ResponsiveContainer>
-                <AreaChart data={painData}>
-                  <defs>
-                    <linearGradient id="painGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#E22279" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#E22279" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={11} />
-                  <YAxis domain={[0, 10]} stroke="var(--text-tertiary)" fontSize={11} />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 8,
-                      color: 'var(--text-primary)',
-                      direction: 'rtl',
-                    }}
-                  />
-                  <Area type="monotone" dataKey="pain" stroke="#E22279" fill="url(#painGrad)" strokeWidth={2} name="דרגת כאב" />
-                </AreaChart>
-              </ResponsiveContainer>
+          {/* Pain Trend & Pain Location Visualizer */}
+          <div className="grid-2 mb-4 animate-fade-in-up stagger-2" style={{ gap: 'var(--space-4)' }}>
+            {/* Pain Chart */}
+            <div className="card">
+              <h3 className="section-title">מגמת כאב (14 ימים)</h3>
+              <div style={{ width: '100%', height: 200 }}>
+                <ResponsiveContainer>
+                  <AreaChart data={painData}>
+                    <defs>
+                      <linearGradient id="painGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#E22279" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#E22279" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={11} />
+                    <YAxis domain={[0, 10]} stroke="var(--text-tertiary)" fontSize={11} />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 8,
+                        color: 'var(--text-primary)',
+                        direction: 'rtl',
+                      }}
+                    />
+                    <Area type="monotone" dataKey="pain" stroke="#E22279" fill="url(#painGrad)" strokeWidth={2} name="דרגת כאב" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
+            {/* Pain Location Visualizer */}
+            {latestPainLocation ? (
+              <PainVisualizer painLocation={latestPainLocation} />
+            ) : (
+              <div className="card text-center flex flex-col items-center justify-center p-6" style={{ minHeight: 250 }}>
+                <div className="text-xs font-semibold text-secondary mb-2">מיקום כאב ממוקד</div>
+                <div className="text-sm text-muted">לא דווח מיקום כאב ממוקד בימים האחרונים</div>
+              </div>
+            )}
           </div>
 
           {/* Clinical Metrics Graphs */}
@@ -1179,6 +1193,9 @@ export default function PatientProfile() {
               </div>
               <div className="text-xs text-secondary mt-2">
                 <strong>פעילות:</strong> {entry.activity}
+              </div>
+              <div className="text-xs text-secondary mt-1">
+                <strong>מיקום כאב:</strong> {PAIN_LOCATION_MAP[entry.painLocation] || 'לא דווח'}
               </div>
               {entry.notes && (
                 <div className="text-xs text-muted mt-1">{entry.notes}</div>

@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS public.journals (
   distance_km NUMERIC(5, 2) DEFAULT 0.00,
   device_synced BOOLEAN DEFAULT FALSE,
   device_type TEXT,
+  pain_location TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+
 );
 
 -- Enable RLS on journals

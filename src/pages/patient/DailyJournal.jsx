@@ -1,6 +1,6 @@
 // === Daily Journal with Supabase & GPX parser ===
 import { useState, useEffect } from 'react';
-import { PainScale, BodyMap } from '../../components/SharedComponents';
+import { PainScale, BodyMap, PAIN_LOCATION_MAP } from '../../components/SharedComponents';
 import { mockJournalEntries } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
@@ -170,6 +170,7 @@ export default function DailyJournal() {
       sleep: Number(sleep),
       activity: activity || (deviceSynced ? (deviceType === 'garmin' ? 'ריצה מסונכרנת משעון גרמין' : 'פעילות מסונכרנת מ-Apple Health') : 'מנוחה'),
       notes,
+      pain_location: selectedArea,
       ...(isLowerLimb ? {
         walking_score: Number(walking),
         stairs_score: Number(stairs),
@@ -239,8 +240,21 @@ export default function DailyJournal() {
 
       {/* Body Map */}
       <div className="card mb-4 animate-fade-in-up stagger-2">
-        <h3 className="section-title">מיקום כאב</h3>
-        <p className="text-xs text-secondary mb-3">לחץ על האזור הכואב</p>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="section-title mb-0">מיקום כאב</h3>
+          {selectedArea && (
+            <span className="badge badge-accent font-semibold text-xs" style={{
+              background: 'rgba(226, 34, 121, 0.15)',
+              color: 'var(--color-accent-light)',
+              border: '1px solid rgba(226, 34, 121, 0.3)',
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-md)'
+            }}>
+              נבחר: {PAIN_LOCATION_MAP[selectedArea] || selectedArea}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-secondary mb-3">לחץ על האזור הכואב בגוף:</p>
         <BodyMap selectedArea={selectedArea} onSelectArea={setSelectedArea} />
       </div>
 
