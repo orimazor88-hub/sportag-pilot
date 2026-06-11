@@ -5,21 +5,59 @@ import { mockExercises } from '../../data/mockData';
 import { ExerciseCard } from '../../components/SharedComponents';
 import { CheckCircle, Trophy } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { supabase } from '../../services/supabaseClient';
 
 export default function MyExercises() {
-  const { user } = useAuth();
+  const { user, isMockMode } = useAuth();
+  const [exercises, setExercises] = useState([]);
   const [completedExercises, setCompletedExercises] = useState({});
+  const [loading, setLoading] = useState(true);
   const location = useLocation();
-  
-  // Get exercises from user profile or fallback
-  const rawExercises = user?.exercises || mockExercises.slice(0, 3);
-  
-  // Sort exercises by assignedDate descending so newest are at the top/front
-  const exercises = [...rawExercises].sort((a, b) => {
-    if (!a.assignedDate) return 1;
-    if (!b.assignedDate) return -1;
-    return new Date(b.assignedDate) - new Date(a.assignedDate);
-  });
+
+  useEffect(() => {
+    loadExercises();
+  }, [user, isMockMode]);
+
+  const loadExercises = async () => {
+    if (!user) return;
+
+    if (isMockMode) {
+      setExercises(mockExercises.slice(0, 3));
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('patient_id', user.id)
+        .order('assigned_date', { ascending: false });
+
+      if (error) throw error;
+
+      setExercises((data || []).map(e => ({
+        id: e.id,
+        name: e.name,
+        nameHe: e.name_he,
+        category: e.category,
+        categoryColor: e.category === 'ברך' || e.category === 'knee' ? '#06B6D4' : '#8B5CF6',
+        description: e.description,
+        sets: e.sets,
+        reps: e.reps,
+        holdTime: e.hold_time,
+        frequency: e.frequency,
+        difficulty: e.difficulty,
+        assignedDate: e.assigned_date,
+        videoUrl: e.video_url
+      })));
+    } catch (err) {
+      console.error('Error loading exercises:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const totalCompleted = Object.values(completedExercises).filter(Boolean).length;
   const allDone = totalCompleted === exercises.length;
@@ -55,6 +93,15 @@ export default function MyExercises() {
     month: 'long',
     year: 'numeric'
   });
+
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid var(--color-primary-light)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite', margin: '0 auto var(--space-4)' }} />
+        <h3>טוען תרגילים...</h3>
+      </div>
+    );
+  }
 
   return (
     <div>

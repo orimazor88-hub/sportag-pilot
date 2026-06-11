@@ -115,6 +115,7 @@ export default function PatientProfile() {
   const [exDifficulty, setExDifficulty] = useState('בינוני');
   const [exDescription, setExDescription] = useState('');
   const [savingExercise, setSavingExercise] = useState(false);
+  const [exVideoFile, setExVideoFile] = useState(null);
 
   // Add session modal states
   const [showAddSessionModal, setShowAddSessionModal] = useState(false);
@@ -152,6 +153,31 @@ export default function PatientProfile() {
     setSavingExercise(true);
 
     try {
+      let uploadedVideoUrl = null;
+
+      // Handle video upload if file is selected
+      if (exVideoFile) {
+        if (isMockMode) {
+          // Generate a mock blob preview URL
+          uploadedVideoUrl = URL.createObjectURL(exVideoFile);
+        } else {
+          // Upload to Supabase Storage
+          const fileName = `exercise_${Date.now()}_${exVideoFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+          const { data, error: uploadError } = await supabase.storage
+            .from('patient-media')
+            .upload(`exercises/${fileName}`, exVideoFile);
+
+          if (uploadError) throw uploadError;
+
+          // Get Public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('patient-media')
+            .getPublicUrl(`exercises/${fileName}`);
+
+          uploadedVideoUrl = publicUrl;
+        }
+      }
+
       const newEx = {
         id: isMockMode ? `ex-${Date.now()}` : undefined,
         name: exNameEn || exNameHe,
@@ -164,6 +190,7 @@ export default function PatientProfile() {
         holdTime: exHoldTime ? Number(exHoldTime) : null,
         frequency: exFrequency,
         difficulty: exDifficulty,
+        videoUrl: uploadedVideoUrl,
         assignedDate: new Date().toISOString().slice(0, 10)
       };
 
@@ -180,6 +207,7 @@ export default function PatientProfile() {
         setExFrequency('פעם ביום');
         setExDifficulty('בינוני');
         setExDescription('');
+        setExVideoFile(null);
         alert('התרגיל התווסף בהצלחה (מצב הדגמה)!');
       } else {
         const { error } = await supabase
@@ -194,7 +222,8 @@ export default function PatientProfile() {
             reps: Number(exReps),
             hold_time: exHoldTime ? Number(exHoldTime) : null,
             frequency: exFrequency,
-            difficulty: exDifficulty
+            difficulty: exDifficulty,
+            video_url: uploadedVideoUrl
           });
 
         if (error) throw error;
@@ -211,6 +240,7 @@ export default function PatientProfile() {
         setExFrequency('פעם ביום');
         setExDifficulty('בינוני');
         setExDescription('');
+        setExVideoFile(null);
         alert('התרגיל שויך בהצלחה למטופל!');
       }
     } catch (err) {
@@ -349,7 +379,8 @@ export default function PatientProfile() {
         holdTime: e.hold_time,
         frequency: e.frequency,
         difficulty: e.difficulty,
-        assignedDate: e.assigned_date
+        assignedDate: e.assigned_date,
+        videoUrl: e.video_url
       }));
 
       // 4. Fetch Journals
@@ -1601,6 +1632,21 @@ export default function PatientProfile() {
                   onChange={e => setExDescription(e.target.value)} 
                   placeholder="למשל: לשמור על ברכיים מקבילות, לרדת ל-90 מעלות ולהחזיק..."
                 />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">צרף סרטון הדגמה (וידאו)</label>
+                <input 
+                  type="file" 
+                  accept="video/*" 
+                  className="input" 
+                  onChange={e => setExVideoFile(e.target.files[0])} 
+                />
+                {exVideoFile && (
+                  <span className="text-xs text-success-light mt-1">
+                    ✓ קובץ נבחר: {exVideoFile.name}
+                  </span>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 mt-4 border-t border-color pt-3">

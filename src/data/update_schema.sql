@@ -96,3 +96,6 @@ BEGIN
   RETURN new_user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 4. Add video_url column to exercises table to store therapist exercise demonstration videos
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS video_url TEXT;

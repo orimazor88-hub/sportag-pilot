@@ -184,7 +184,25 @@ export function ExerciseCard({ exercise, onComplete, completed = false }) {
   };
 
   const exerciseUploads = (uploads || []).filter(item => item.exerciseId === exercise.id);
-  const clinicVideos = exerciseUploads.filter(item => item.uploadedBy === 'therapist');
+  const clinicVideos = [...exerciseUploads.filter(item => item.uploadedBy === 'therapist')];
+
+  const exerciseVideoUrl = exercise.videoUrl || exercise.video_url;
+  if (exerciseVideoUrl) {
+    if (!clinicVideos.some(v => v.persistedUrl === exerciseVideoUrl || v.previewUrl === exerciseVideoUrl)) {
+      clinicVideos.unshift({
+        id: `db-video-${exercise.id}`,
+        type: 'video',
+        name: 'exercise_demo.mp4',
+        title: 'סרטון הדגמה מצורף',
+        exerciseId: exercise.id,
+        uploadedBy: 'therapist',
+        date: exercise.assignedDate || new Date().toISOString().split('T')[0],
+        note: exercise.description || 'הנחיות ביצוע שנקבעו בקליניקה',
+        persistedUrl: exerciseVideoUrl,
+      });
+    }
+  }
+
   const latestClinicVideo = clinicVideos[0]; // The most recent therapist video
 
   const getMediaSrc = (file) => {
