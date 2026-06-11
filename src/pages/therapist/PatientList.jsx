@@ -22,6 +22,7 @@ export default function PatientList() {
   const [gender, setGender] = useState('male');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [sport, setSport] = useState('');
   const [condition, setCondition] = useState('');
   const [conditionHe, setConditionHe] = useState('');
@@ -101,10 +102,6 @@ export default function PatientList() {
   };
 
   const handleNewPatientClick = () => {
-    if (!isMockMode) {
-      alert('עבור הפיילוט, יש לרשום את המטופל דרך מסך ההרשמה (Sign Up) בדף הכניסה של האפליקציה בטלפון שלו. המטופל יופיע כאן ברשימה באופן מיידי לאחר מכן!');
-      return;
-    }
     setShowModal(true);
   };
 
@@ -116,67 +113,113 @@ export default function PatientList() {
     setIsLowerLimb(lowerLimbAreas.includes(newArea));
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!name || !conditionHe) {
       alert('נא למלא שם מטופל ואבחנה בעברית');
       return;
     }
 
-    const newId = `p${mockPatients.length + 1}`;
-    const newPatient = {
-      id: newId,
-      name,
-      age: parseInt(age) || 30,
-      gender,
-      phone: phone || 'טרם עודכן',
-      email: email || '',
-      avatar: area === 'ברך' ? '🦵' : area === 'כתף' ? '💪' : area === 'גב' ? '🔙' : area === 'צוואר' ? '🧣' : area === 'ירך' ? '🦴' : area === 'קרסול' ? '🦶' : '🏃',
-      avatarBg: gender === 'female' ? '#EC4899' : '#8B5CF6',
-      sport: sport || 'כללי',
-      condition: condition || 'Orthopedic Rehabilitation',
-      conditionHe,
-      icd10: 'M76.51',
-      area,
-      areaColor: area === 'ברך' ? '#06B6D4' : area === 'כתף' ? '#8B5CF6' : area === 'גב' ? '#F59E0B' : area === 'צוואר' ? '#EC4899' : area === 'ירך' ? '#10B981' : '#EF4444',
-      startDate: new Date().toISOString().split('T')[0],
-      nextSession: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
-      sessionsCount: 0,
-      status: 'active',
-      painLevel: initialPain,
-      progress: 0,
-      notes: 'פתיחת כרטיס מטופל חדש במערכת.',
-      isLowerLimb,
-      initialPainLevel: initialPain,
-      targets: {
-        targetDate,
-        painLevel: { intermediate: interPain, final: interPain },
-        rom: { intermediate: interRom, final: interRom },
-        strength: { intermediate: interStrength, final: interStrength, muscle: strengthMuscle },
-        ...(isLowerLimb ? {
-          walking: { intermediate: interWalking, final: interWalking },
-          stairs: { intermediate: interStairs, final: interStairs },
-          running: { intermediate: interRunning, final: interRunning }
-        } : {})
-      },
-      metricsHistory: [
-        {
-          date: new Date().toISOString().split('T')[0],
-          rom: initialRom,
-          strength: initialStrength,
-          ...(isLowerLimb ? {
-            walking: initialWalking,
-            stairs: initialStairs,
-            running: initialRunning
-          } : {})
-        }
-      ]
+    if (!isMockMode && (!email || !password)) {
+      alert('נא למלא אימייל וסיסמה עבור המטופל');
+      return;
+    }
+
+    const targetDataObj = {
+      targetDate,
+      painLevel: { intermediate: interPain, final: interPain },
+      rom: { intermediate: interRom, final: interRom },
+      strength: { intermediate: interStrength, final: interStrength, muscle: strengthMuscle },
+      ...(isLowerLimb ? {
+        walking: { intermediate: interWalking, final: interWalking },
+        stairs: { intermediate: interStairs, final: interStairs },
+        running: { intermediate: interRunning, final: interRunning }
+      } : {})
     };
 
-    mockPatients.push(newPatient);
-    setShowModal(false);
-    resetForm();
-    navigate(`/therapist/patients/${newId}`);
+    if (isMockMode) {
+      const newId = `p${mockPatients.length + 1}`;
+      const newPatient = {
+        id: newId,
+        name,
+        age: parseInt(age) || 30,
+        gender,
+        phone: phone || 'טרם עודכן',
+        email: email || '',
+        avatar: area === 'ברך' ? '🦵' : area === 'כתף' ? '💪' : area === 'גב' ? '🔙' : area === 'צוואר' ? '🧣' : area === 'ירך' ? '🦴' : area === 'קרסול' ? '🦶' : '🏃',
+        avatarBg: gender === 'female' ? '#EC4899' : '#8B5CF6',
+        sport: sport || 'כללי',
+        condition: condition || 'Orthopedic Rehabilitation',
+        conditionHe,
+        icd10: 'M76.51',
+        area,
+        areaColor: area === 'ברך' ? '#06B6D4' : area === 'כתף' ? '#8B5CF6' : area === 'גב' ? '#F59E0B' : area === 'צוואר' ? '#EC4899' : area === 'ירך' ? '#10B981' : '#EF4444',
+        startDate: new Date().toISOString().split('T')[0],
+        nextSession: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+        sessionsCount: 0,
+        status: 'active',
+        painLevel: initialPain,
+        progress: 0,
+        notes: 'פתיחת כרטיס מטופל חדש במערכת.',
+        isLowerLimb,
+        initialPainLevel: initialPain,
+        targets: targetDataObj,
+        metricsHistory: [
+          {
+            date: new Date().toISOString().split('T')[0],
+            rom: initialRom,
+            strength: initialStrength,
+            ...(isLowerLimb ? {
+              walking: initialWalking,
+              stairs: initialStairs,
+              running: initialRunning
+            } : {})
+          }
+        ]
+      };
+
+      mockPatients.push(newPatient);
+      setShowModal(false);
+      resetForm();
+      navigate(`/therapist/patients/${newId}`);
+    } else {
+      try {
+        setLoading(true);
+        const { data: newPatientId, error } = await supabase.rpc('create_patient', {
+          p_email: email,
+          p_password: password,
+          p_name: name,
+          p_phone: phone || '',
+          p_age: parseInt(age) || 30,
+          p_gender: gender,
+          p_sport: sport || 'כללי',
+          p_condition_name: conditionHe,
+          p_is_lower_limb: isLowerLimb,
+          p_targets: targetDataObj,
+          p_initial_pain: Number(initialPain),
+          p_initial_rom: Number(initialRom),
+          p_initial_strength: Number(initialStrength),
+          p_initial_walking: isLowerLimb ? Number(initialWalking) : null,
+          p_initial_stairs: isLowerLimb ? Number(initialStairs) : null,
+          p_initial_running: isLowerLimb ? Number(initialRunning) : null
+        });
+
+        if (error) throw error;
+
+        alert('מטופל חדש נרשם בהצלחה והיעדים הוגדרו!');
+        setShowModal(false);
+        resetForm();
+        await loadPatients();
+        if (newPatientId) {
+          navigate(`/therapist/patients/${newPatientId}`);
+        }
+      } catch (err) {
+        console.error('Error creating patient:', err);
+        alert('שגיאה ברישום מטופל: ' + err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const resetForm = () => {
@@ -185,6 +228,7 @@ export default function PatientList() {
     setGender('male');
     setPhone('');
     setEmail('');
+    setPassword('');
     setSport('');
     setCondition('');
     setConditionHe('');
@@ -303,9 +347,15 @@ export default function PatientList() {
                     <input type="text" className="input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="050-0000000" />
                   </div>
                   <div className="input-group">
-                    <label className="input-label">אימייל</label>
-                    <input type="email" className="input" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" />
+                    <label className="input-label">אימייל {!isMockMode && '*'}</label>
+                    <input type="email" className="input" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" required={!isMockMode} />
                   </div>
+                  {!isMockMode && (
+                    <div className="input-group">
+                      <label className="input-label">סיסמה ראשונית למטופל *</label>
+                      <input type="password" className="input" value={password} onChange={e => setPassword(e.target.value)} placeholder="לפחות 6 תווים" required />
+                    </div>
+                  )}
                   <div className="input-group">
                     <label className="input-label">אזור פגיעה</label>
                     <select className="input" value={area} onChange={e => handleAreaChange(e.target.value)}>

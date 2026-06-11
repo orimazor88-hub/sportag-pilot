@@ -360,6 +360,7 @@ export default function PatientProfile() {
         .order('date', { ascending: false });
 
       const formattedJournals = (dbJournals || []).map(j => ({
+        id: j.id,
         date: j.date,
         painLevel: j.pain_level,
         mood: j.mood,
@@ -374,7 +375,9 @@ export default function PatientProfile() {
         stepsCount: j.steps_count,
         distanceKm: j.distance_km,
         deviceSynced: j.device_synced,
-        deviceType: j.device_type
+        deviceType: j.device_type,
+        rom: j.rom,
+        strength: j.strength
       }));
 
       // 5. Fetch Media Uploads
@@ -403,7 +406,7 @@ export default function PatientProfile() {
         phone: profile.phone || 'לא עודכן',
         avatar: profile.avatar || '🏃',
         avatarBg: '#8B5CF6',
-        sport: 'פיילוט פעיל',
+        sport: profile.sport || 'פיילוט פעיל',
         conditionHe: profile.condition_name || 'שיקום פיזיותרפיה',
         condition: 'Active Rehab Profile',
         area: profile.is_lower_limb ? 'גפה תחתונה' : 'גפה עליונה',
@@ -413,8 +416,8 @@ export default function PatientProfile() {
         painLevel: formattedJournals.length > 0 ? formattedJournals[0].painLevel : 4,
         progress: 50,
         isLowerLimb: profile.is_lower_limb,
-        initialPainLevel: 7,
-        targets: {
+        initialPainLevel: formattedJournals.length > 0 ? formattedJournals[formattedJournals.length - 1].painLevel : 7,
+        targets: profile.targets || {
           targetDate: '2026-06-25',
           painLevel: { intermediate: 3, final: 0 },
           rom: { intermediate: 135, final: 145 },
@@ -427,8 +430,8 @@ export default function PatientProfile() {
         },
         metricsHistory: formattedJournals.length > 0 ? formattedJournals.map(j => ({
           date: j.date,
-          rom: profile.is_lower_limb ? 130 : 160,
-          strength: 4,
+          rom: j.rom || (profile.is_lower_limb ? 130 : 160),
+          strength: j.strength || 4,
           walking: j.walkingScore || 7,
           stairs: j.stairsScore || 7,
           running: j.runningScore || 5
@@ -650,32 +653,72 @@ export default function PatientProfile() {
     setActiveTab(tabId);
   };
 
-  const handleSaveTargets = (e) => {
+  const handleSaveTargets = async (e) => {
     e.preventDefault();
-    patient.targets = {
+    const updatedTargets = {
       ...editedTargets,
       targetDate: editedTargetDate,
       strength: { ...editedTargets.strength, muscle: editedStrengthMuscle }
     };
-    patient.initialPainLevel = editedInitialPain;
-    if (patient.metricsHistory && patient.metricsHistory.length > 0) {
-      patient.metricsHistory[0] = {
-        ...patient.metricsHistory[0],
-        rom: Number(editedFirstMetric.rom),
-        strength: Number(editedFirstMetric.strength),
-        ...(patient.isLowerLimb ? {
-          walking: Number(editedFirstMetric.walking),
-          stairs: Number(editedFirstMetric.stairs),
-          running: Number(editedFirstMetric.running),
-        } : {})
-      };
+
+    if (isMockMode) {
+      patient.targets = updatedTargets;
+      patient.initialPainLevel = editedInitialPain;
+      if (patient.metricsHistory && patient.metricsHistory.length > 0) {
+        patient.metricsHistory[0] = {
+          ...patient.metricsHistory[0],
+          rom: Number(editedFirstMetric.rom),
+          strength: Number(editedFirstMetric.strength),
+          ...(patient.isLowerLimb ? {
+            walking: Number(editedFirstMetric.walking),
+            stairs: Number(editedFirstMetric.stairs),
+            running: Number(editedFirstMetric.running),
+          } : {})
+        };
+      }
+      if (patient.painLevel > editedInitialPain) {
+        patient.painLevel = editedInitialPain;
+      }
+      alert('היעדים עודכנו בהצלחה במערכת!');
+      setActiveTab('overview');
+    } else {
+      try {
+        const { error: pError } = await supabase
+          .from('profiles')
+          .update({
+            targets: updatedTargets
+          })
+          .eq('id', id);
+
+        if (pError) throw pError;
+
+        if (journalHistory && journalHistory.length > 0) {
+          const oldestJournal = journalHistory[journalHistory.length - 1];
+          const { error: jError } = await supabase
+            .from('journals')
+            .update({
+              pain_level: editedInitialPain,
+              rom: Number(editedFirstMetric.rom),
+              strength: Number(editedFirstMetric.strength),
+              ...(patient.isLowerLimb ? {
+                walking_score: Number(editedFirstMetric.walking),
+                stairs_score: Number(editedFirstMetric.stairs),
+                running_score: Number(editedFirstMetric.running),
+              } : {})
+            })
+            .eq('id', oldestJournal.id);
+
+          if (jError) throw jError;
+        }
+
+        alert('היעדים עודכנו בהצלחה במערכת!');
+        await loadPatientData();
+        setActiveTab('overview');
+      } catch (err) {
+        console.error('Error saving targets:', err);
+        alert('שגיאה בעדכון היעדים: ' + err.message);
+      }
     }
-    // Update current patient values if baseline was edited to be above current
-    if (patient.painLevel > editedInitialPain) {
-      patient.painLevel = editedInitialPain;
-    }
-    alert('היעדים עודכנו בהצלחה במערכת!');
-    setActiveTab('overview');
   };
 
   return (

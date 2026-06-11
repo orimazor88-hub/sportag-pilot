@@ -18,7 +18,7 @@ export default function LoginPage() {
   const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
-  const [signUpRole, setSignUpRole] = useState('patient');
+  const [signUpRole, setSignUpRole] = useState('therapist');
   const [isLowerLimb, setIsLowerLimb] = useState(true);
 
   const [animating, setAnimating] = useState(false);
@@ -197,31 +197,7 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="input-group">
-              <label className="input-label">תפקיד במערכת</label>
-              <select 
-                className="input"
-                value={signUpRole}
-                onChange={(e) => setSignUpRole(e.target.value)}
-              >
-                <option value="patient">מטופל (Patient)</option>
-                <option value="therapist">פיזיותרפיסט (Therapist)</option>
-              </select>
-            </div>
 
-            {signUpRole === 'patient' && (
-              <div className="flex items-center gap-2 mt-1">
-                <input 
-                  type="checkbox" 
-                  id="isLowerLimb" 
-                  checked={isLowerLimb} 
-                  onChange={(e) => setIsLowerLimb(e.target.checked)} 
-                />
-                <label htmlFor="isLowerLimb" className="text-xs text-secondary">
-                  פציעת גפה תחתונה (ברך/ירך/קרסול)
-                </label>
-              </div>
-            )}
 
             <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
               <UserPlus size={18} />
@@ -316,17 +292,6 @@ export default function LoginPage() {
                   >
                     כניסת צוות מטפלים / אדמין 👨‍⚕️
                   </button>
-
-                  {!isMockMode && (
-                    <button 
-                      type="button" 
-                      className="btn btn-ghost btn-sm" 
-                      style={{ border: 'none', fontSize: '11px', color: 'var(--color-primary-light)', fontWeight: 'bold' }}
-                      onClick={() => setIsSignUp(true)}
-                    >
-                      אין לך חשבון? הרשם כאן 👤
-                    </button>
-                  )}
                 </div>
               </form>
             ) : (

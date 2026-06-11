@@ -1,6 +1,8 @@
 // === Progress View ===
+import { useState, useEffect } from 'react';
 import { mockJournalEntries, mockPatients } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   AreaChart, Area, BarChart, Bar
@@ -8,10 +10,132 @@ import {
 import { TrendingDown, TrendingUp, Award, Target, Info } from 'lucide-react';
 
 export default function ProgressView() {
-  const { user } = useAuth();
-  const entries = mockJournalEntries.slice().reverse();
+  const { user, isMockMode } = useAuth();
+  const [patient, setPatient] = useState(null);
+  const [journalHistory, setJournalHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const patient = mockPatients.find(p => p.id === user?.id) || mockPatients[0];
+  useEffect(() => {
+    loadProgressData();
+  }, [user, isMockMode]);
+
+  const loadProgressData = async () => {
+    if (!user) return;
+
+    if (isMockMode) {
+      const p = mockPatients.find(x => x.id === user.id) || mockPatients[0];
+      setPatient(p);
+      setJournalHistory(mockJournalEntries);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // 1. Fetch Profile
+      const { data: profile, error: pError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (pError) throw pError;
+
+      // 2. Fetch Journals
+      const { data: dbJournals, error: jError } = await supabase
+        .from('journals')
+        .select('*')
+        .eq('patient_id', user.id)
+        .order('date', { ascending: false });
+
+      if (jError) throw jError;
+
+      const formattedJournals = (dbJournals || []).map(j => ({
+        id: j.id,
+        date: j.date,
+        painLevel: j.pain_level,
+        mood: j.mood,
+        energy: j.energy,
+        sleep: j.sleep,
+        activity: j.activity,
+        notes: j.notes,
+        exercisesCompleted: true,
+        walkingScore: j.walking_score,
+        stairsScore: j.stairs_score,
+        runningScore: j.running_score,
+        stepsCount: j.steps_count,
+        distanceKm: j.distance_km,
+        deviceSynced: j.device_synced,
+        deviceType: j.device_type,
+        rom: j.rom,
+        strength: j.strength
+      }));
+
+      const formattedPatient = {
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        phone: profile.phone || 'לא עודכן',
+        avatar: profile.avatar || '🏃',
+        avatarBg: '#8B5CF6',
+        sport: profile.sport || 'פיילוט פעיל',
+        conditionHe: profile.condition_name || 'שיקום פיזיותרפיה',
+        condition: 'Active Rehab Profile',
+        area: profile.is_lower_limb ? 'גפה תחתונה' : 'גפה עליונה',
+        areaColor: profile.is_lower_limb ? '#06B6D4' : '#8B5CF6',
+        startDate: profile.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        painLevel: formattedJournals.length > 0 ? formattedJournals[0].painLevel : 4,
+        progress: 50,
+        isLowerLimb: profile.is_lower_limb,
+        initialPainLevel: formattedJournals.length > 0 ? formattedJournals[formattedJournals.length - 1].painLevel : 7,
+        targets: profile.targets || {
+          targetDate: '2026-06-25',
+          painLevel: { intermediate: 3, final: 0 },
+          rom: { intermediate: 135, final: 145 },
+          strength: { intermediate: 4.5, final: 5, muscle: 'ארבע ראשי' },
+          ...(profile.is_lower_limb ? {
+            walking: { intermediate: 8, final: 10 },
+            stairs: { intermediate: 8, final: 10 },
+            running: { intermediate: 7, final: 10 }
+          } : {})
+        },
+        metricsHistory: formattedJournals.length > 0 ? formattedJournals.map(j => ({
+          date: j.date,
+          rom: j.rom || (profile.is_lower_limb ? 130 : 160),
+          strength: j.strength || 4,
+          walking: j.walkingScore || 7,
+          stairs: j.stairsScore || 7,
+          running: j.runningScore || 5
+        })).reverse() : [{
+          date: new Date().toISOString().slice(0, 10),
+          rom: profile.is_lower_limb ? 120 : 150,
+          strength: 3,
+          walking: 5,
+          stairs: 5,
+          running: 2
+        }]
+      };
+
+      setPatient(formattedPatient);
+      setJournalHistory(formattedJournals);
+    } catch (err) {
+      console.error('Error loading patient progress details:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading || !patient) {
+    return (
+      <div className="empty-state">
+        <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid var(--color-primary-light)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite', margin: '0 auto var(--space-4)' }} />
+        <h3>טוען נתוני התקדמות...</h3>
+      </div>
+    );
+  }
+
+  const entries = journalHistory.slice().reverse();
 
   const painData = entries.map(e => ({
     date: new Date(e.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' }),
