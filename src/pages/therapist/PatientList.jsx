@@ -5,7 +5,7 @@ import { mockPatients } from '../../data/mockData';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { PatientCard, SearchBar } from '../../components/SharedComponents';
-import { UserPlus, Filter, X, Info } from 'lucide-react';
+import { UserPlus, Filter, X, Info, Loader2 } from 'lucide-react';
 
 export default function PatientList() {
   const { isMockMode } = useAuth();
@@ -541,7 +541,14 @@ export default function PatientList() {
                   ביטול
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={loading}>
-                  {loading ? 'שומר...' : 'שמור ופתח כרטיס'}
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      שומר...
+                    </span>
+                  ) : (
+                    'שמור ופתח כרטיס'
+                  )}
                 </button>
               </div>
             </form>
