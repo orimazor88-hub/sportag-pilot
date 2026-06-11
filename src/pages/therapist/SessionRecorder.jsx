@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
 import {
   Mic, MicOff, Square, Pause, Play, CheckCircle,
-  Copy, Download, ArrowRight, User, Clock, FileText, Sparkles, Activity
+  Copy, Download, ArrowRight, User, Clock, FileText, Sparkles, Activity, Trash2
 } from 'lucide-react';
 
 export default function SessionRecorder() {
@@ -275,6 +275,23 @@ export default function SessionRecorder() {
     setStep('result');
   };
 
+  const handleCancelRecording = () => {
+    if (window.confirm('האם אתה בטוח שברצונך לבטל את ההקלטה? כל המידע שנקלט יימחק.')) {
+      setIsRecording(false);
+      setIsPaused(false);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      setTimer(0);
+      setTranscriptionText('');
+      transcriptionRef.current = '';
+      setSelectedPatient(null);
+      setStep('select');
+    }
+  };
+
   const handleCopy = () => {
     navigator.clipboard?.writeText(summary);
     setCopied(true);
@@ -438,19 +455,32 @@ export default function SessionRecorder() {
             </div>
 
             {/* Controls */}
-            <div className="flex justify-center gap-4">
+            <div className="flex justify-center items-center gap-6">
               <button
+                type="button"
                 className="btn btn-round btn-ghost"
-                onClick={() => setIsPaused(!isPaused)}
+                onClick={handleCancelRecording}
+                title="ביטול ומחיקת הקלטה"
+                style={{ color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}
               >
-                {isPaused ? <Play size={24} /> : <Pause size={24} />}
+                <Trash2 size={24} />
               </button>
+              
               <button
+                type="button"
                 className="btn btn-round btn-danger"
                 onClick={handleStopRecording}
                 style={{ width: 72, height: 72 }}
               >
                 <Square size={28} />
+              </button>
+              
+              <button
+                type="button"
+                className="btn btn-round btn-ghost"
+                onClick={() => setIsPaused(!isPaused)}
+              >
+                {isPaused ? <Play size={24} /> : <Pause size={24} />}
               </button>
             </div>
 
