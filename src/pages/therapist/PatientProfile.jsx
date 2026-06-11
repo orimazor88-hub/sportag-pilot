@@ -157,9 +157,9 @@ export default function PatientProfile() {
 
       // Handle video upload if file is selected
       if (exVideoFile) {
-        const maxVideoSize = 150 * 1024 * 1024; // 150MB
+        const maxVideoSize = 50 * 1024 * 1024; // 50MB
         if (exVideoFile.size > maxVideoSize) {
-          alert('שגיאה: קובץ הוידאו גדול מדי. הגודל המרבי המותר להעלאה הוא 150MB.');
+          alert('שגיאה: קובץ הוידאו גדול מדי. הגודל המרבי המותר להעלאה הוא 50MB (מגבלת שרת בחינם).');
           setSavingExercise(false);
           return;
         }
