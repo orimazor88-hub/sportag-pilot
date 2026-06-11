@@ -64,7 +64,7 @@ export function AuthProvider({ children }) {
 
     // 1. Check current active session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
+      if (session && !window.location.hash.includes('type=recovery')) {
         fetchUserProfile(session.user);
       } else {
         setLoading(false);
@@ -74,7 +74,12 @@ export function AuthProvider({ children }) {
     // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        fetchUserProfile(session.user);
+        if (_event === 'PASSWORD_RECOVERY' || window.location.hash.includes('type=recovery')) {
+          // Keep user/role null so that the user stays on the login/reset password page
+          setLoading(false);
+        } else {
+          fetchUserProfile(session.user);
+        }
       } else {
         setUser(null);
         setRole(null);
