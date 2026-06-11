@@ -42,11 +42,13 @@ BEGIN
     RAISE EXCEPTION 'Only therapists can create patients';
   END IF;
 
-  -- Check if email already exists
+  -- Check if email already exists in profiles or auth.users
   IF EXISTS (
     SELECT 1 FROM public.profiles WHERE email = p_email
+  ) OR EXISTS (
+    SELECT 1 FROM auth.users WHERE email = p_email
   ) THEN
-    RAISE EXCEPTION 'מטופל עם אימייל זה כבר קיים במערכת';
+    RAISE EXCEPTION 'כתובת האימייל הזו כבר רשומה במערכת. אנא השתמש בכתובת אימייל אחרת.';
   END IF;
 
   -- Generate UUID and encrypt password

@@ -215,7 +215,17 @@ export default function PatientList() {
         }
       } catch (err) {
         console.error('Error creating patient:', err);
-        alert('שגיאה ברישום מטופל: ' + err.message);
+        let friendlyMsg = err.message || 'שגיאה בלתי צפויה ברישום המטופל';
+        
+        if (friendlyMsg.includes('users_email_partial_key') || friendlyMsg.includes('duplicate key') || friendlyMsg.includes('already exists') || friendlyMsg.includes('אימייל זה כבר קיים') || friendlyMsg.includes('האימייל הזו כבר רשומה')) {
+          friendlyMsg = 'כתובת האימייל שהזנת כבר רשומה במערכת עבור מטופל אחר. אנא השתמש בכתובת אימייל אחרת.';
+        } else if (friendlyMsg.includes('Only therapists')) {
+          friendlyMsg = 'רק פיזיותרפיסטים מורשים להוסיף מטופלים חדשים.';
+        } else if (friendlyMsg.includes('Password should be') || friendlyMsg.includes('weak password') || friendlyMsg.includes('at least 6 characters')) {
+          friendlyMsg = 'הסיסמה חלשה מדי. הסיסמה צריכה להכיל לפחות 6 תווים.';
+        }
+        
+        alert('שגיאה ברישום מטופל: ' + friendlyMsg);
       } finally {
         setLoading(false);
       }
