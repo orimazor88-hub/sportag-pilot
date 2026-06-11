@@ -100,9 +100,10 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 4. Add video_url column to exercises table to store therapist exercise demonstration videos
 ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS video_url TEXT;
 
--- 5. Configure the patient-media bucket to allow files up to 50MB (52428800 bytes) - Supabase Free Tier hard limit
+-- 5. Configure the patient-media bucket to allow files up to 500MB (524288000 bytes)
 INSERT INTO storage.buckets (id, name, public, file_size_limit) 
-VALUES ('patient-media', 'patient-media', true, 52428800)
+VALUES ('patient-media', 'patient-media', true, 524288000)
 ON CONFLICT (id) DO UPDATE 
-SET file_size_limit = 52428800;
+SET file_size_limit = 524288000;
+
 
