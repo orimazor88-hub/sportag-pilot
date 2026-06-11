@@ -28,6 +28,8 @@ export default function SessionRecorder() {
 
   // Live Web Speech transcription
   const [transcriptionText, setTranscriptionText] = useState('');
+  const [isSpeechSupported, setIsSpeechSupported] = useState(true);
+  const [recognitionError, setRecognitionError] = useState('');
   const recognitionRef = useRef(null);
 
   // Clinical & Functional Metrics States
@@ -39,6 +41,10 @@ export default function SessionRecorder() {
 
   useEffect(() => {
     loadPatients();
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setIsSpeechSupported(false);
+    }
   }, [isMockMode]);
 
   const loadPatients = async () => {
@@ -92,6 +98,8 @@ export default function SessionRecorder() {
     if (!Recognition) return;
 
     if (isRecording && !isPaused) {
+      setRecognitionError('');
+      
       if (!recognitionRef.current) {
         const rec = new Recognition();
         rec.lang = 'he-IL';
@@ -101,20 +109,34 @@ export default function SessionRecorder() {
         rec.onresult = (event) => {
           let finalTranscript = '';
           let interimTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
+          for (let i = 0; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
               finalTranscript += event.results[i][0].transcript + ' ';
             } else {
               interimTranscript += event.results[i][0].transcript;
             }
           }
-          setTranscriptionText(prev => {
-            return finalTranscript || interimTranscript ? (finalTranscript + interimTranscript) : prev;
-          });
+          setTranscriptionText(finalTranscript + interimTranscript);
         };
 
         rec.onerror = (e) => {
           console.error('Speech recognition error:', e);
+          if (e.error === 'not-allowed') {
+            setRecognitionError('הגישה למיקרופון נחסמה. נא לאפשר גישה למיקרופון בהגדרות הדפדפן.');
+          } else {
+            setRecognitionError(`שגיאת תמלול: ${e.error}`);
+          }
+        };
+
+        rec.onend = () => {
+          // Automatically restart if we're still recording
+          if (isRecording && !isPaused) {
+            try {
+              rec.start();
+            } catch (err) {
+              console.error('Failed to restart speech recognition:', err);
+            }
+          }
         };
 
         recognitionRef.current = rec;
@@ -408,6 +430,44 @@ export default function SessionRecorder() {
             </p>
 
             {/* Real-time transcription preview */}
+            {!isSpeechSupported && (
+              <div 
+                style={{ 
+                  background: 'rgba(245, 158, 11, 0.08)', 
+                  border: '1px solid rgba(245, 158, 11, 0.2)', 
+                  borderRadius: 'var(--radius-lg)', 
+                  padding: 'var(--space-3)', 
+                  marginTop: 'var(--space-5)', 
+                  textAlign: 'right',
+                  fontSize: '13px',
+                  color: '#F59E0B',
+                  lineHeight: 1.5,
+                  direction: 'rtl'
+                }}
+              >
+                ⚠️ הדפדפן הנוכחי אינו תומך בתמלול קולי חי בזמן אמת (נתמך ב-Chrome, Safari, Edge). המערכת תסמלץ סיכום טיפול אוטומטי בסיום ההקלטה.
+              </div>
+            )}
+
+            {recognitionError && (
+              <div 
+                style={{ 
+                  background: 'rgba(239, 68, 68, 0.08)', 
+                  border: '1px solid rgba(239, 68, 68, 0.2)', 
+                  borderRadius: 'var(--radius-lg)', 
+                  padding: 'var(--space-3)', 
+                  marginTop: 'var(--space-5)', 
+                  textAlign: 'right',
+                  fontSize: '13px',
+                  color: '#EF4444',
+                  lineHeight: 1.5,
+                  direction: 'rtl'
+                }}
+              >
+                ⚠️ {recognitionError}
+              </div>
+            )}
+
             {transcriptionText && (
               <div 
                 style={{ 
