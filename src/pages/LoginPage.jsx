@@ -1,7 +1,8 @@
 // === Login Page with Supabase Support ===
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../services/supabaseClient';
 import { Stethoscope, UserRound, Activity, Lock, User, UserPlus } from 'lucide-react';
 
 export default function LoginPage() {
@@ -21,9 +22,24 @@ export default function LoginPage() {
   const [signUpRole, setSignUpRole] = useState('therapist');
   const [isLowerLimb, setIsLowerLimb] = useState(true);
 
+  // Forgot / Reset Password states
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+
   const [animating, setAnimating] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    // Check if URL hash indicates a password recovery redirection
+    if (window.location.hash && window.location.hash.includes('type=recovery')) {
+      setIsResettingPassword(true);
+      setError('');
+      setMessage('');
+    }
+  }, []);
 
   const handlePatientSubmit = async (e) => {
     e.preventDefault();
@@ -102,6 +118,69 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      setError('נא להזין כתובת אימייל');
+      return;
+    }
+    setError('');
+    setMessage('');
+    setAnimating(true);
+
+    if (isMockMode) {
+      setTimeout(() => {
+        setMessage('נשלח אימייל דמו לאיפוס סיסמה (מצב הדגמה).');
+        setAnimating(false);
+      }, 1000);
+      return;
+    }
+
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/`
+      });
+
+      if (resetError) throw resetError;
+
+      setMessage('נשלחה הודעה לאיפוס סיסמה לתיבת האימייל שלך. אנא בדוק את תיבת הדואר הנכנס.');
+      setResetEmail('');
+      setIsForgotPassword(false);
+    } catch (err) {
+      setError(err.message || 'שגיאה בשליחת אימייל לאיפוס סיסמה.');
+    } finally {
+      setAnimating(false);
+    }
+  };
+
+  const handleSetNewPasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setError('הסיסמה החדשה חייבת להכיל לפחות 6 תווים');
+      return;
+    }
+    setError('');
+    setMessage('');
+    setAnimating(true);
+
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateError) throw updateError;
+
+      setMessage('הסיסמה החדשה עודכנה בהצלחה! כעת תוכל להתחבר.');
+      setIsResettingPassword(false);
+      setNewPassword('');
+      window.location.hash = '';
+    } catch (err) {
+      setError(err.message || 'שגיאה בעדכון הסיסמה החדשה.');
+    } finally {
+      setAnimating(false);
+    }
+  };
+
   return (
     <div className="login-page">
       <div className="login-bg-effects">
@@ -158,7 +237,76 @@ export default function LoginPage() {
           </div>
         )}
 
-        {isSignUp ? (
+        {isResettingPassword ? (
+          /* Set New Password Form */
+          <form onSubmit={handleSetNewPasswordSubmit} className="flex flex-col gap-4 animate-fade-in-up">
+            <h2 className="text-md font-bold text-center" style={{ color: 'var(--color-primary-light)' }}>קביעת סיסמה חדשה</h2>
+            <p className="text-xs text-secondary text-center">
+              הזן את הסיסמה החדשה עבור חשבונך.
+            </p>
+            <div className="input-group">
+              <label className="input-label">סיסמה חדשה (מינימום 6 תווים)</label>
+              <input
+                type="password"
+                className="input"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="הזן סיסמה חדשה..."
+                required
+                autoFocus
+              />
+            </div>
+            <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
+              עדכן סיסמה והתחבר
+            </button>
+            <button 
+              type="button" 
+              className="btn btn-ghost btn-sm mt-4" 
+              style={{ border: 'none', fontSize: '11px', color: 'var(--text-secondary)' }}
+              onClick={() => {
+                setIsResettingPassword(false);
+                window.location.hash = '';
+              }}
+            >
+              ביטול
+            </button>
+          </form>
+        ) : isForgotPassword ? (
+          /* Forgot Password Form */
+          <form onSubmit={handleForgotPasswordSubmit} className="flex flex-col gap-4 animate-fade-in-up">
+            <h2 className="text-md font-bold text-center" style={{ color: 'var(--color-primary-light)' }}>איפוס סיסמה</h2>
+            <p className="text-xs text-secondary text-center">
+              הזן את כתובת האימייל שלך ונשלח אליך קישור מאובטח לאיפוס הסיסמה.
+            </p>
+            <div className="input-group">
+              <label className="input-label">כתובת אימייל</label>
+              <input
+                type="email"
+                className="input"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                placeholder="name@email.com"
+                required
+                autoFocus
+              />
+            </div>
+            <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
+              שלח קישור לאיפוס
+            </button>
+            <button 
+              type="button" 
+              className="btn btn-ghost btn-sm mt-4" 
+              style={{ border: 'none', fontSize: '11px', color: 'var(--text-secondary)' }}
+              onClick={() => {
+                setIsForgotPassword(false);
+                setError('');
+                setMessage('');
+              }}
+            >
+              חזרה להתחברות
+            </button>
+          </form>
+        ) : isSignUp ? (
           /* Sign Up Form (Only visible in Supabase mode) */
           <form onSubmit={handleSignUpSubmit} className="flex flex-col gap-4 animate-fade-in-up">
             <div className="input-group">
@@ -196,8 +344,6 @@ export default function LoginPage() {
                 required
               />
             </div>
-
-
 
             <button type="submit" className="btn btn-primary btn-lg w-full mt-2">
               <UserPlus size={18} />
@@ -246,6 +392,19 @@ export default function LoginPage() {
                         }} 
                       />
                     </div>
+                    <div className="flex justify-start">
+                      <button
+                        type="button"
+                        className="login-forgot-link text-xs font-semibold"
+                        style={{ marginTop: '4px' }}
+                        onClick={() => {
+                          setMessage('במצב הדגמה (Mock Mode), קוד הכניסה של המטופל הוא 1234. ניתן למצוא את פרטי המטופל במסך המטפל.');
+                          setError('');
+                        }}
+                      >
+                        שכחת קוד?
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -271,6 +430,21 @@ export default function LoginPage() {
                         placeholder="••••••••"
                         required
                       />
+                      <div className="flex justify-start">
+                        <button
+                          type="button"
+                          className="login-forgot-link text-xs font-semibold"
+                          style={{ marginTop: '4px' }}
+                          onClick={() => {
+                            setIsForgotPassword(true);
+                            setResetEmail(email);
+                            setError('');
+                            setMessage('');
+                          }}
+                        >
+                          שכחת סיסמה?
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
@@ -345,6 +519,21 @@ export default function LoginPage() {
                         color: 'var(--text-tertiary)' 
                       }} 
                     />
+                  </div>
+                  <div className="flex justify-start">
+                    <button
+                      type="button"
+                      className="login-forgot-link text-xs font-semibold"
+                      style={{ marginTop: '4px' }}
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setResetEmail(email);
+                        setError('');
+                        setMessage('');
+                      }}
+                    >
+                      שכחת סיסמה?
+                    </button>
                   </div>
                 </div>
 

@@ -177,6 +177,23 @@
   color: var(--text-tertiary);
 }
 
+.login-forgot-link {
+  color: var(--color-primary-light);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: all var(--transition-fast);
+}
+
+.login-forgot-link:hover {
+  color: white;
+  text-shadow: 0 0 8px rgba(38, 98, 137, 0.5);
+}
+
 /* === Dashboard === */
 .dashboard-section {
   margin-bottom: var(--space-8);
