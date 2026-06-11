@@ -157,6 +157,13 @@ export default function PatientProfile() {
 
       // Handle video upload if file is selected
       if (exVideoFile) {
+        const maxVideoSize = 150 * 1024 * 1024; // 150MB
+        if (exVideoFile.size > maxVideoSize) {
+          alert('שגיאה: קובץ הוידאו גדול מדי. הגודל המרבי המותר להעלאה הוא 150MB.');
+          setSavingExercise(false);
+          return;
+        }
+
         if (isMockMode) {
           // Generate a mock blob preview URL
           uploadedVideoUrl = URL.createObjectURL(exVideoFile);
