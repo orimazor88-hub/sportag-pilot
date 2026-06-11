@@ -31,6 +31,7 @@ export default function SessionRecorder() {
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
   const [recognitionError, setRecognitionError] = useState('');
   const recognitionRef = useRef(null);
+  const transcriptionRef = useRef('');
 
   // Clinical & Functional Metrics States
   const [rom, setRom] = useState(120);
@@ -116,7 +117,9 @@ export default function SessionRecorder() {
               interimTranscript += event.results[i][0].transcript;
             }
           }
-          setTranscriptionText(finalTranscript + interimTranscript);
+          const fullText = finalTranscript + interimTranscript;
+          setTranscriptionText(fullText);
+          transcriptionRef.current = fullText;
         };
 
         rec.onerror = (e) => {
@@ -198,6 +201,7 @@ export default function SessionRecorder() {
   const handleConsentAccept = () => {
     setShowConsent(false);
     setTranscriptionText('');
+    transcriptionRef.current = '';
     setStep('recording');
     setIsRecording(true);
   };
@@ -220,18 +224,43 @@ export default function SessionRecorder() {
     // Simulate AI processing delay
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    if (transcriptionText.trim()) {
-      const formattedSummary = `סיכום ביקור פיזיותרפיה (תמלול קולי)
+    const currentTranscript = transcriptionRef.current.trim();
 
+    if (currentTranscript) {
+      // Parse metrics from speech text to match sliders
+      const painMatch = currentTranscript.match(/(?:כאב|vas)\s*(?:של|ברמה של|הוא)?\s*(\d+)/i);
+      const romMatch = currentTranscript.match(/(?:טווח|rom)\s*(?:של|הוא|בכיפוף|ביישור|מעלות)?\s*(\d+)/i);
+      if (romMatch) {
+        const val = Number(romMatch[1]);
+        if (val >= 0 && val <= 180) setRom(val);
+      }
+      const strengthMatch = currentTranscript.match(/(?:כוח|mrc)\s*(?:שריר|הוא|של)?\s*(\d+)/i);
+      if (strengthMatch) {
+        const val = Number(strengthMatch[1]);
+        if (val >= 0 && val <= 5) setStrength(val);
+      }
+
+      const extractedPain = painMatch ? painMatch[1] : 'לא צוין';
+      const extractedRom = romMatch ? `${romMatch[1]}°` : 'לא צוין';
+      const extractedStrength = strengthMatch ? `${strengthMatch[1]}/5` : 'לא צוין';
+
+      const formattedSummary = `סיכום ביקור פיזיותרפיה (תמלול קולי)
+=====================================
 מטופל: ${selectedPatient?.name || 'פיילוט'}
 תאריך הטיפול: ${new Date().toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}
 אופן התיעוד: הקלטת קול ותמלול אוטומטי בזמן אמת
 
-סיכום המפגש הקליני:
-"${transcriptionText.trim()}"
+תמליל המפגש הקליני:
+"${currentTranscript}"
+
+ניתוח קליני המופק מהתמלול:
+-----------------------------
+• מדד כאב (VAS) שזוהה: ${extractedPain}
+• טווח תנועה (ROM) שזוהה: ${extractedRom}
+• כוח שריר (MRC) שזוהה: ${extractedStrength}
 
 הערות והנחיות המשך:
-המדדים עודכנו בהצלחה במערכת בהתאם לקביעת הפיזיותרפיסט.`;
+המדדים עודכנו בהצלחה במערכת בהתאם לתמלול הטיפול.`;
       setSummary(formattedSummary);
     } else {
       const result = await simulateTranscription();
