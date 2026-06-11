@@ -66,10 +66,10 @@ BEGIN
 
   -- Insert identity into auth.identities
   INSERT INTO auth.identities (
-    id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+    id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
   ) VALUES (
     gen_random_uuid(), new_user_id, 
-    jsonb_build_object('sub', new_user_id, 'email', p_email), 'email', null, now(), now()
+    jsonb_build_object('sub', new_user_id, 'email', p_email), 'email', new_user_id::text, null, now(), now()
   );
 
   -- Insert profile
