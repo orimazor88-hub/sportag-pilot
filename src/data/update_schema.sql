@@ -108,3 +108,34 @@ SET file_size_limit = 524288000;
 
 -- 6. Add pain_location column to journals table to track precise pain sub-locations
 ALTER TABLE public.journals ADD COLUMN IF NOT EXISTS pain_location TEXT;
+
+-- 7. Create therapist_notes table for dated tracking notes
+CREATE TABLE IF NOT EXISTS public.therapist_notes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  patient_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  therapist_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  notes TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS on therapist_notes
+ALTER TABLE public.therapist_notes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Patients and therapists can view therapist notes" 
+  ON public.therapist_notes FOR SELECT USING (
+    auth.uid() = patient_id OR 
+    EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE public.profiles.id = auth.uid() AND public.profiles.role = 'therapist'
+    )
+  );
+
+CREATE POLICY "Therapists can manage therapist notes" 
+  ON public.therapist_notes FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE public.profiles.id = auth.uid() AND public.profiles.role = 'therapist'
+    )
+  );
+

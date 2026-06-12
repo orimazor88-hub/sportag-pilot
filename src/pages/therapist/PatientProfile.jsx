@@ -9,7 +9,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, Area
 import {
   ArrowRight, Calendar, FileText, Dumbbell, TrendingUp,
   Clock, Activity, Brain, ChevronLeft, Target, Sliders,
-  Camera, Image, Video, MessageSquare, X, Play
+  Camera, Image, Video, MessageSquare, X, Play, Edit, Trash2
 } from 'lucide-react';
 
 export default function PatientProfile() {
@@ -125,6 +125,15 @@ export default function PatientProfile() {
   const [sessType, setSessType] = useState('פיזיותרפיה');
   const [sessSummary, setSessSummary] = useState('');
   const [savingSession, setSavingSession] = useState(false);
+
+  // Therapist notes states
+  const [therapistNotes, setTherapistNotes] = useState([]);
+  const [showAddNoteModal, setShowAddNoteModal] = useState(false);
+  const [noteDate, setNoteDate] = useState(new Date().toISOString().slice(0, 10)); // YYYY-MM-DD
+  const [noteContent, setNoteContent] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+
 
   const getCategoryColor = (cat) => {
     switch (cat) {
@@ -363,6 +372,122 @@ export default function PatientProfile() {
     }
   };
 
+  const handleAddNote = async (e) => {
+    e.preventDefault();
+    if (!noteContent.trim()) {
+      alert('נא להזין תוכן להערה');
+      return;
+    }
+
+    setSavingNote(true);
+
+    try {
+      if (isMockMode) {
+        if (editingNoteId) {
+          const updatedNotes = therapistNotes.map(n => 
+            n.id === editingNoteId ? { ...n, date: noteDate, notes: noteContent } : n
+          );
+          setTherapistNotes(updatedNotes);
+          localStorage.setItem(`mock_therapist_notes_${id}`, JSON.stringify(updatedNotes));
+          alert('ההערה עודכנה בהצלחה (מצב הדגמה)!');
+        } else {
+          const newNote = {
+            id: `note-${Date.now()}`,
+            patient_id: id,
+            date: noteDate,
+            notes: noteContent,
+            created_at: new Date().toISOString()
+          };
+          const updatedNotes = [newNote, ...therapistNotes];
+          setTherapistNotes(updatedNotes);
+          localStorage.setItem(`mock_therapist_notes_${id}`, JSON.stringify(updatedNotes));
+          alert('ההערה התווספה בהצלחה (מצב הדגמה)!');
+        }
+        setShowAddNoteModal(false);
+        setNoteContent('');
+        setNoteDate(new Date().toISOString().slice(0, 10));
+        setEditingNoteId(null);
+      } else {
+        if (editingNoteId) {
+          const { error } = await supabase
+            .from('therapist_notes')
+            .update({
+              date: noteDate,
+              notes: noteContent
+            })
+            .eq('id', editingNoteId);
+
+          if (error) throw error;
+          alert('ההערה עודכנה בהצלחה!');
+        } else {
+          const { data: authData } = await supabase.auth.getUser();
+          const activeTherapistId = authData?.user?.id || user?.id;
+
+          if (!activeTherapistId) {
+            throw new Error('לא נמצא מזהה מטפל מחובר. אנא התחבר מחדש.');
+          }
+
+          const { error } = await supabase
+            .from('therapist_notes')
+            .insert({
+              patient_id: id,
+              therapist_id: activeTherapistId,
+              date: noteDate,
+              notes: noteContent
+            });
+
+          if (error) throw error;
+          alert('ההערה נשמרה בהצלחה!');
+        }
+
+        await loadPatientData();
+        setShowAddNoteModal(false);
+        setNoteContent('');
+        setNoteDate(new Date().toISOString().slice(0, 10));
+        setEditingNoteId(null);
+      }
+    } catch (err) {
+      console.error('Error adding/updating therapist note:', err);
+      alert('שגיאה בשמירת ההערה: ' + err.message);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleEditNoteClick = (note) => {
+    setEditingNoteId(note.id);
+    setNoteContent(note.notes);
+    const dateStr = note.date ? new Date(note.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    setNoteDate(dateStr);
+    setShowAddNoteModal(true);
+  };
+
+  const handleDeleteNote = async (noteId) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק הערה זו?')) return;
+
+    try {
+      if (isMockMode) {
+        const updatedNotes = therapistNotes.filter(n => n.id !== noteId);
+        setTherapistNotes(updatedNotes);
+        localStorage.setItem(`mock_therapist_notes_${id}`, JSON.stringify(updatedNotes));
+        alert('ההערה נמחקה בהצלחה (מצב הדגמה)!');
+      } else {
+        const { error } = await supabase
+          .from('therapist_notes')
+          .delete()
+          .eq('id', noteId);
+
+        if (error) throw error;
+
+        await loadPatientData();
+        alert('ההערה נמחקה בהצלחה!');
+      }
+    } catch (err) {
+      console.error('Error deleting note:', err);
+      alert('שגיאה במחיקת ההערה: ' + err.message);
+    }
+  };
+
   useEffect(() => {
     loadPatientData();
   }, [id, isMockMode, uploads]);
@@ -378,6 +503,32 @@ export default function PatientProfile() {
       })));
       setJournalHistory(mockJournalEntries);
       setPatientMedia(uploads);
+
+      // Load mock notes from localStorage or default
+      const savedNotes = localStorage.getItem(`mock_therapist_notes_${id}`);
+      if (savedNotes) {
+        setTherapistNotes(JSON.parse(savedNotes));
+      } else {
+        const defaultNotes = [
+          {
+            id: 'note-1',
+            date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+            notes: 'פגישת הערכה ראשונית. המטופל מדווח על כאב ממוקד בגיד הפיקה ברגל ימין במהלך ואחרי ריצה. טווחי תנועה מלאים, כוח שריר 4/5.',
+            patient_id: id,
+            created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            id: 'note-2',
+            date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+            notes: 'דיווח על שיפור קל לאחר ביצוע תרגילי חיזוק איזומטריים לברך. כאב ירד לדרגה 3 במהלך הליכה.',
+            patient_id: id,
+            created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        ];
+        setTherapistNotes(defaultNotes);
+        localStorage.setItem(`mock_therapist_notes_${id}`, JSON.stringify(defaultNotes));
+      }
+
       setLoading(false);
       return;
     }
@@ -482,6 +633,24 @@ export default function PatientProfile() {
         thumbnailUrl: item.thumbnail_url
       }));
 
+      // 6. Fetch Therapist Notes
+      let formattedNotes = [];
+      try {
+        const { data: dbNotes, error: nError } = await supabase
+          .from('therapist_notes')
+          .select('*')
+          .eq('patient_id', id)
+          .order('date', { ascending: false });
+
+        if (nError) {
+          console.warn('Could not fetch therapist notes:', nError);
+        } else {
+          formattedNotes = dbNotes || [];
+        }
+      } catch (noteErr) {
+        console.warn('Error fetching therapist notes:', noteErr);
+      }
+
       const formattedPatient = {
         id: profile.id,
         name: profile.name,
@@ -533,6 +702,7 @@ export default function PatientProfile() {
       setExercises(formattedExercises);
       setJournalHistory(formattedJournals);
       setPatientMedia(formattedMedia);
+      setTherapistNotes(formattedNotes);
     } catch (err) {
       console.error('Error loading patient details:', err);
     } finally {
@@ -1088,9 +1258,74 @@ export default function PatientProfile() {
           )}
 
           {/* Notes */}
-          <div className="card animate-fade-in-up stagger-2">
-            <h3 className="section-title">הערות מטפל</h3>
-            <p className="text-sm text-secondary" style={{ lineHeight: 1.8 }}>{patient.notes}</p>
+          <div className="card animate-fade-in-up stagger-2" style={{ direction: 'rtl' }}>
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+              <h3 className="section-title mb-0" style={{ fontSize: '1.15rem' }}>📋 תיעוד והערות מעקב קליני</h3>
+              <button 
+                type="button" 
+                className="btn btn-primary btn-sm flex items-center gap-1"
+                onClick={() => {
+                  setEditingNoteId(null);
+                  setNoteContent('');
+                  setNoteDate(new Date().toISOString().slice(0, 10));
+                  setShowAddNoteModal(true);
+                }}
+              >
+                <span>➕</span> הוסף הערה
+              </button>
+            </div>
+
+            {therapistNotes.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 'var(--space-6) 0', color: 'var(--text-tertiary)' }}>
+                <p className="text-sm">אין עדיין הערות מעקב קליני מתועדות למטופל זה.</p>
+                <p className="text-xs mt-1">לחץ על הכפתור למעלה כדי לרשום הערה ראשונה.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4" style={{ maxHeight: '400px', overflowY: 'auto', paddingLeft: 'var(--space-2)' }}>
+                {therapistNotes.map((note, idx) => (
+                  <div 
+                    key={note.id || idx} 
+                    style={{ 
+                      borderBottom: idx < therapistNotes.length - 1 ? '1px solid var(--border-color)' : 'none',
+                      paddingBottom: idx < therapistNotes.length - 1 ? 'var(--space-3)' : '0',
+                      paddingTop: idx > 0 ? 'var(--space-1)' : '0',
+                    }}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} style={{ color: 'var(--color-primary-light)' }} />
+                        <span className="font-semibold text-xs text-primary" style={{ color: 'var(--text-primary)' }}>
+                          {new Date(note.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          title="ערוך הערה"
+                          onClick={() => handleEditNoteClick(note)}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                        >
+                          <Edit size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          title="מחק הערה"
+                          onClick={() => handleDeleteNote(note.id)}
+                          style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-secondary" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', margin: '0' }}>
+                      {note.notes}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1857,6 +2092,116 @@ export default function PatientProfile() {
                   disabled={savingSession}
                 >
                   {savingSession ? 'רושם טיפול...' : 'רשום טיפול'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Therapist Note Modal */}
+      {showAddNoteModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-4)',
+            direction: 'rtl'
+          }}
+          onClick={() => {
+            setShowAddNoteModal(false);
+            setEditingNoteId(null);
+            setNoteContent('');
+            setNoteDate(new Date().toISOString().slice(0, 10));
+          }}
+        >
+          <div 
+            style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-xl)',
+              padding: 'var(--space-5)',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-xl)',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4 border-b border-color pb-3">
+              <h3 className="font-bold text-lg text-primary flex items-center gap-2">
+                <FileText size={20} style={{ color: 'var(--color-primary-light)' }} />
+                {editingNoteId ? 'עריכת הערת מעקב קליני' : 'הוספת הערת מעקב קליני'}
+              </h3>
+              <button 
+                type="button"
+                className="btn btn-icon btn-ghost" 
+                onClick={() => {
+                  setShowAddNoteModal(false);
+                  setEditingNoteId(null);
+                  setNoteContent('');
+                  setNoteDate(new Date().toISOString().slice(0, 10));
+                }}
+                style={{ width: 32, height: 32 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddNote} className="flex flex-col gap-4">
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">תאריך *</label>
+                <input 
+                  type="date" 
+                  className="input" 
+                  value={noteDate}
+                  onChange={e => setNoteDate(e.target.value)}
+                  required 
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label text-xs font-semibold">תוכן ההערה / מעקב *</label>
+                <textarea 
+                  className="input" 
+                  rows="6" 
+                  value={noteContent} 
+                  onChange={e => setNoteContent(e.target.value)} 
+                  placeholder="כתוב כאן ממצאים מהטיפול האחרון, הערות מעקב קליני, תצפיות או עדכונים קליניים..."
+                  required 
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-4 border-t border-color pt-3">
+                <button 
+                  type="button" 
+                  className="btn btn-ghost" 
+                  onClick={() => {
+                    setShowAddNoteModal(false);
+                    setEditingNoteId(null);
+                    setNoteContent('');
+                    setNoteDate(new Date().toISOString().slice(0, 10));
+                  }}
+                  disabled={savingNote}
+                >
+                  ביטול
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={savingNote}
+                >
+                  {savingNote ? 'שומר...' : (editingNoteId ? 'עדכן הערה' : 'שמור הערה')}
                 </button>
               </div>
             </form>

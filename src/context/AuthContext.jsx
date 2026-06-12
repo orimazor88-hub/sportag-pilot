@@ -10,6 +10,7 @@ const IS_MOCK_MODE = !import.meta.env.VITE_SUPABASE_URL ||
 
 export function AuthProvider({ children }) {
   const [role, setRole] = useState(null);
+  const [viewRole, setViewRole] = useState(null); // active display role (can differ for dual-role users)
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploads, setUploadsState] = useState([]);
@@ -111,8 +112,10 @@ export function AuthProvider({ children }) {
           isLowerLimb: data.is_lower_limb,
           phone: data.phone,
           avatar: data.avatar || '🏃',
+          canSwitchRole: data.can_switch_role || false,
         });
         setRole(data.role);
+        setViewRole(data.role);
       }
     } catch (err) {
       console.error('Error fetching user profile from Supabase:', err);
@@ -123,10 +126,10 @@ export function AuthProvider({ children }) {
 
   const login = async (emailOrRole, password = '') => {
     if (IS_MOCK_MODE) {
-      // In mock mode, the first parameter is the role
       const selectedRole = emailOrRole;
       const selectedUser = selectedRole === 'therapist' ? therapistProfile : patientProfile;
       setRole(selectedRole);
+      setViewRole(selectedRole);
       setUser(selectedUser);
       localStorage.setItem('sportag_role', selectedRole);
       localStorage.setItem('sportag_user', JSON.stringify(selectedUser));
@@ -192,20 +195,29 @@ export function AuthProvider({ children }) {
   };
 
   const switchRole = () => {
-    // Role switching is only allowed/relevant in mock mode for previewing
-    if (!IS_MOCK_MODE) return;
-    const newRole = role === 'therapist' ? 'patient' : 'therapist';
-    const selectedUser = newRole === 'therapist' ? therapistProfile : patientProfile;
-    setRole(newRole);
-    setUser(selectedUser);
-    localStorage.setItem('sportag_role', newRole);
-    localStorage.setItem('sportag_user', JSON.stringify(selectedUser));
+    // In mock mode, full role switch
+    if (IS_MOCK_MODE) {
+      const newRole = role === 'therapist' ? 'patient' : 'therapist';
+      const selectedUser = newRole === 'therapist' ? therapistProfile : patientProfile;
+      setRole(newRole);
+      setViewRole(newRole);
+      setUser(selectedUser);
+      localStorage.setItem('sportag_role', newRole);
+      localStorage.setItem('sportag_user', JSON.stringify(selectedUser));
+      return;
+    }
+    // In live mode, toggle viewRole only (real role stays the same)
+    if (user?.canSwitchRole) {
+      const newViewRole = viewRole === 'therapist' ? 'patient' : 'therapist';
+      setViewRole(newViewRole);
+    }
   };
 
   return (
     <AuthContext.Provider value={{ 
       user, 
-      role, 
+      role: viewRole || role,  // use viewRole for rendering (allows dual-role toggle)
+      realRole: role,           // original DB role
       loading, 
       login, 
       signup, 

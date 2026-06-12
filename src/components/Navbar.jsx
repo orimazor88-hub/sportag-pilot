@@ -1,15 +1,14 @@
-// === Navigation Component ===
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Home, Users, Mic, Calendar, Video, Brain,
   ClipboardList, Dumbbell, Camera, TrendingUp,
-  LogOut, Moon, Sun
+  LogOut, Moon, Sun, ArrowLeftRight
 } from 'lucide-react';
 import { useState } from 'react';
 
 export function Navbar() {
-  const { role, logout } = useAuth();
+  const { role, user, logout, switchRole } = useAuth();
   const navigate = useNavigate();
   const [darkMode, setDarkMode] = useState(true);
 
@@ -82,6 +81,16 @@ export function Navbar() {
         </nav>
 
         <div className="sidebar-footer" style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          {user?.canSwitchRole && (
+            <button 
+              className="sidebar-item" 
+              onClick={() => { switchRole(); navigate(role === 'therapist' ? '/patient' : '/therapist'); }}
+              style={{ border: 'none', background: 'none', cursor: 'pointer', width: '100%', textAlign: 'start', color: 'var(--color-accent)' }}
+            >
+              <ArrowLeftRight size={20} />
+              {role === 'patient' ? 'מבט מטפל' : 'מבט מטופל'}
+            </button>
+          )}
           <button className="sidebar-item" onClick={toggleTheme} style={{ border: 'none', background: 'none', cursor: 'pointer', width: '100%', textAlign: 'start' }}>
             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             {darkMode ? 'מצב בהיר' : 'מצב כהה'}

@@ -27,6 +27,7 @@ export default function PatientDashboard() {
   const [completedCount, setCompletedCount] = useState(0);
   const [nextSession, setNextSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [therapistNotes, setTherapistNotes] = useState([]);
 
   useEffect(() => {
     loadDashboardData();
@@ -40,6 +41,31 @@ export default function PatientDashboard() {
       setExercises(mockExercises.slice(0, 3));
       setCompletedCount(2);
       setNextSession(mockCalendarEvents.find(e => e.patientId === 'p1'));
+      
+      const savedNotes = localStorage.getItem('mock_therapist_notes_p1');
+      if (savedNotes) {
+        setTherapistNotes(JSON.parse(savedNotes));
+      } else {
+        const defaultNotes = [
+          {
+            id: 'note-1',
+            date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+            notes: 'פגישת הערכה ראשונית. המטופל מדווח על כאב ממוקד בגיד הפיקה ברגל ימין במהלך ואחרי ריצה. טווחי תנועה מלאים, כוח שריר 4/5.',
+            patient_id: 'p1',
+            created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            id: 'note-2',
+            date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+            notes: 'דיווח על שיפור קל לאחר ביצוע תרגילי חיזוק איזומטריים לברך. כאב ירד לדרגה 3 במהלך הליכה.',
+            patient_id: 'p1',
+            created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        ];
+        setTherapistNotes(defaultNotes);
+        localStorage.setItem('mock_therapist_notes_p1', JSON.stringify(defaultNotes));
+      }
+
       setLoading(false);
       return;
     }
@@ -105,6 +131,23 @@ export default function PatientDashboard() {
           date: dbSessions[0].date
         });
       }
+
+      // 4. Fetch Therapist Notes
+      let fetchedNotes = [];
+      try {
+        const { data: dbNotes, error: nError } = await supabase
+          .from('therapist_notes')
+          .select('*')
+          .eq('patient_id', user.id)
+          .order('date', { ascending: false });
+
+        if (!nError && dbNotes) {
+          fetchedNotes = dbNotes;
+        }
+      } catch (noteErr) {
+        console.warn('Could not fetch therapist notes from DB:', noteErr);
+      }
+      setTherapistNotes(fetchedNotes);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     } finally {
@@ -208,6 +251,34 @@ export default function PatientDashboard() {
           color="#8B5CF6"
         />
       </div>
+
+      {/* Therapist Notes Card */}
+      {therapistNotes.length > 0 && (
+        <div className="card mb-6 animate-fade-in-up" style={{ background: 'linear-gradient(135deg, rgba(8, 145, 178, 0.08) 0%, rgba(38, 98, 137, 0.08) 100%)', border: '1px solid rgba(8, 145, 178, 0.25)', direction: 'rtl' }}>
+          <h3 className="section-title flex items-center gap-2" style={{ fontSize: 'var(--font-size-md)', color: 'var(--color-primary-light)', marginBottom: 'var(--space-3)' }}>
+            <span>💬 הנחיות והערות מעקב מהמטפל</span>
+          </h3>
+          <div className="flex flex-col gap-3">
+            {therapistNotes.slice(0, 2).map((note, idx) => (
+              <div 
+                key={note.id || idx} 
+                style={{ 
+                  borderBottom: idx < Math.min(therapistNotes.length, 2) - 1 ? '1px dashed rgba(8, 145, 178, 0.15)' : 'none',
+                  paddingBottom: idx < Math.min(therapistNotes.length, 2) - 1 ? 'var(--space-3)' : '0',
+                }}
+              >
+                <div className="flex justify-between items-center mb-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  <span>📅 {new Date(note.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' })}</span>
+                  <span className="badge badge-teal" style={{ fontSize: '9px', padding: '2px 6px' }}>מעקב קליני</span>
+                </div>
+                <p className="text-sm" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5', margin: 0, fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {note.notes}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Today's Exercises */}
       <div className="dashboard-section animate-fade-in-up stagger-3">
