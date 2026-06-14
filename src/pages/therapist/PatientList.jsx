@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { mockPatients } from '../../data/mockData';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, supabaseAdmin } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { PatientCard, SearchBar } from '../../components/SharedComponents';
 import { UserPlus, Filter, X, Info, Loader2 } from 'lucide-react';
@@ -185,34 +185,72 @@ export default function PatientList() {
     } else {
       try {
         setLoading(true);
-        const { data: newPatientId, error } = await supabase.rpc('create_patient', {
-          p_email: email,
-          p_password: password,
-          p_name: name,
-          p_phone: phone || '',
-          p_age: parseInt(age) || 30,
-          p_gender: gender,
-          p_sport: sport || 'כללי',
-          p_condition_name: conditionHe,
-          p_is_lower_limb: isLowerLimb,
-          p_targets: targetDataObj,
-          p_initial_pain: Number(initialPain),
-          p_initial_rom: Number(initialRom),
-          p_initial_strength: Number(initialStrength),
-          p_initial_walking: isLowerLimb ? Number(initialWalking) : null,
-          p_initial_stairs: isLowerLimb ? Number(initialStairs) : null,
-          p_initial_running: isLowerLimb ? Number(initialRunning) : null
+
+        if (!supabaseAdmin) {
+          throw new Error('Admin client not configured. Add VITE_SUPABASE_SERVICE_ROLE_KEY to .env');
+        }
+
+        // 1. Create auth user via Admin API (sets password correctly in Supabase Auth)
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: { name, role: 'patient' }
         });
 
-        if (error) throw error;
+        if (authError) throw authError;
+        const newUserId = authData.user.id;
+
+        const targetDataObj = {
+          targetDate,
+          painLevel: { intermediate: interPain, final: interPain },
+          rom: { intermediate: interRom, final: interRom },
+          strength: { intermediate: interStrength, final: interStrength, muscle: strengthMuscle },
+          ...(isLowerLimb ? {
+            walking: { intermediate: interWalking, final: interWalking },
+            stairs: { intermediate: interStairs, final: interStairs },
+            running: { intermediate: interRunning, final: interRunning }
+          } : {})
+        };
+
+        // 2. Insert profile
+        const { error: profileError } = await supabaseAdmin.from('profiles').insert({
+          id: newUserId,
+          email,
+          name,
+          role: 'patient',
+          is_lower_limb: isLowerLimb,
+          condition_name: conditionHe,
+          phone: phone || '',
+          avatar: isLowerLimb ? '🦵' : '💪',
+          targets: targetDataObj,
+          age: parseInt(age) || 30,
+          gender,
+          sport: sport || 'כללי'
+        });
+
+        if (profileError) throw profileError;
+
+        // 3. Insert baseline journal entry
+        const { error: journalError } = await supabaseAdmin.from('journals').insert({
+          patient_id: newUserId,
+          date: new Date().toISOString().split('T')[0],
+          pain_level: Number(initialPain),
+          rom: Number(initialRom),
+          strength: Number(initialStrength),
+          walking_score: isLowerLimb ? Number(initialWalking) : null,
+          stairs_score: isLowerLimb ? Number(initialStairs) : null,
+          running_score: isLowerLimb ? Number(initialRunning) : null,
+          notes: 'ערכי בסיס (Baseline) שהוגדרו על ידי המטפל במעמד הרישום.'
+        });
+
+        if (journalError) throw journalError;
 
         alert('מטופל חדש נרשם בהצלחה והיעדים הוגדרו!');
         setShowModal(false);
         resetForm();
         await loadPatients();
-        if (newPatientId) {
-          navigate(`/therapist/patients/${newPatientId}`);
-        }
+        navigate(`/therapist/patients/${newUserId}`);
       } catch (err) {
         console.error('Error creating patient:', err);
         let friendlyMsg = err.message || 'שגיאה בלתי צפויה ברישום המטופל';
