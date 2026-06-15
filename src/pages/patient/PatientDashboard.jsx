@@ -14,13 +14,119 @@ import {
 } from '../../services/notificationService';
 import {
   Smile, Dumbbell, Calendar, TrendingDown, ArrowLeft,
-  ClipboardList, Camera, ChevronLeft
+  ClipboardList, Camera, ChevronLeft, Target
 } from 'lucide-react';
+
+const calculateProgressToGoal = (profile, journalsList) => {
+  if (!profile) return 50; // default fallback
+  
+  const isLowerLimb = profile.is_lower_limb || profile.isLowerLimb || false;
+  const list = journalsList || [];
+  
+  const formattedJournals = list.map(j => ({
+    date: j.date,
+    painLevel: j.pain_level !== undefined ? j.pain_level : (j.painLevel ?? 4),
+    rom: j.rom,
+    strength: j.strength,
+    walkingScore: j.walking_score !== undefined ? j.walking_score : j.walkingScore,
+    stairsScore: j.stairs_score !== undefined ? j.stairs_score : j.stairsScore,
+    runningScore: j.running_score !== undefined ? j.running_score : j.runningScore,
+  }));
+
+  const targets = profile.targets || {
+    targetDate: '2026-06-25',
+    painLevel: { intermediate: 3, final: 0 },
+    rom: { intermediate: 135, final: 145 },
+    strength: { intermediate: 4.5, final: 5, muscle: 'ארבע ראשי' },
+    ...(isLowerLimb ? {
+      walking: { intermediate: 8, final: 10 },
+      stairs: { intermediate: 8, final: 10 },
+      running: { intermediate: 7, final: 10 }
+    } : {})
+  };
+
+  const currentPainVal = formattedJournals.length > 0 ? formattedJournals[0].painLevel : 4;
+  const initialPain = formattedJournals.length > 0 ? formattedJournals[formattedJournals.length - 1].painLevel : 7;
+  const painTarget = targets.painLevel?.intermediate ?? 3;
+
+  const calcPainProgress = (current, initial, target) => {
+    if (initial === undefined || current === undefined || target === undefined || initial === target) return 100;
+    const progress = ((initial - current) / (initial - target)) * 100;
+    return Math.min(100, Math.max(0, Math.round(progress)));
+  };
+
+  const calcMetricProgress = (current, initial, target) => {
+    if (initial === undefined || current === undefined || target === undefined || initial === target) return 100;
+    const progress = ((current - initial) / (target - initial)) * 100;
+    return Math.min(100, Math.max(0, Math.round(progress)));
+  };
+
+  const activeMetrics = [];
+  activeMetrics.push(calcPainProgress(currentPainVal, initialPain, painTarget));
+
+  // metricsHistory formatting matching ProgressView.jsx exactly
+  const metricsHistory = formattedJournals.length > 0 ? formattedJournals.map(j => ({
+    rom: j.rom || (isLowerLimb ? 130 : 160),
+    strength: j.strength || 4,
+    walking: j.walkingScore || 7,
+    stairs: j.stairsScore || 7,
+    running: j.runningScore || 5
+  })).reverse() : [{
+    rom: isLowerLimb ? 120 : 150,
+    strength: 3,
+    walking: 5,
+    stairs: 5,
+    running: 2
+  }];
+
+  const latestMetric = metricsHistory[metricsHistory.length - 1];
+  const firstMetric = metricsHistory[0];
+
+  const currentRom = latestMetric?.rom || 120;
+  const initRom = firstMetric?.rom || 110;
+  const romTarget = targets.rom?.intermediate ?? 130;
+  activeMetrics.push(calcMetricProgress(currentRom, initRom, romTarget));
+
+  const currentStr = latestMetric?.strength || 3;
+  const initStr = firstMetric?.strength || 3;
+  const strTarget = targets.strength?.intermediate ?? 4.5;
+  activeMetrics.push(calcMetricProgress(currentStr, initStr, strTarget));
+
+  if (isLowerLimb) {
+    const currentWalk = latestMetric?.walking || 5;
+    const initWalk = firstMetric?.walking || 5;
+    const walkTarget = targets.walking?.intermediate ?? 8;
+    activeMetrics.push(calcMetricProgress(currentWalk, initWalk, walkTarget));
+
+    const currentStairs = latestMetric?.stairs || 4;
+    const initStairs = firstMetric?.stairs || 4;
+    const stairsTarget = targets.stairs?.intermediate ?? 8;
+    activeMetrics.push(calcMetricProgress(currentStairs, initStairs, stairsTarget));
+
+    const currentRun = latestMetric?.running || 2;
+    const initRun = firstMetric?.running || 2;
+    const runTarget = targets.running?.intermediate ?? 6;
+    activeMetrics.push(calcMetricProgress(currentRun, initRun, runTarget));
+  }
+
+  const avgProgress = activeMetrics.length > 0
+    ? Math.round(activeMetrics.reduce((sum, val) => sum + val, 0) / activeMetrics.length)
+    : 0;
+
+  return avgProgress;
+};
 
 export default function PatientDashboard() {
   const { user, isMockMode } = useAuth();
   const navigate = useNavigate();
   const [notificationsEnabled, setNotificationsEnabled] = useState(isNotificationEnabled());
+
+  const [reminderEnabled, setReminderEnabled] = useState(() => {
+    return localStorage.getItem('sportag_reminder_enabled') === 'true';
+  });
+  const [reminderTime, setReminderTime] = useState(() => {
+    return localStorage.getItem('sportag_reminder_time') || '19:00';
+  });
 
   const [todayJournal, setTodayJournal] = useState(null);
   const [exercises, setExercises] = useState([]);
@@ -28,6 +134,7 @@ export default function PatientDashboard() {
   const [nextSession, setNextSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [therapistNotes, setTherapistNotes] = useState([]);
+  const [progressToGoal, setProgressToGoal] = useState(50);
 
   useEffect(() => {
     loadDashboardData();
@@ -41,6 +148,19 @@ export default function PatientDashboard() {
       setExercises(mockExercises.slice(0, 3));
       setCompletedCount(2);
       setNextSession(mockCalendarEvents.find(e => e.patientId === 'p1'));
+      
+      const mockPatient = {
+        is_lower_limb: true,
+        targets: {
+          painLevel: { intermediate: 3, final: 0 },
+          rom: { intermediate: 135, final: 145 },
+          strength: { intermediate: 4.5, final: 5 },
+          walking: { intermediate: 8, final: 10 },
+          stairs: { intermediate: 8, final: 10 },
+          running: { intermediate: 7, final: 10 }
+        }
+      };
+      setProgressToGoal(calculateProgressToGoal(mockPatient, mockJournalEntries));
       
       const savedNotes = localStorage.getItem('mock_therapist_notes_p1');
       if (savedNotes) {
@@ -73,7 +193,14 @@ export default function PatientDashboard() {
     try {
       setLoading(true);
       
-      // 1. Fetch Latest Journal Entry (Today)
+      // 1. Fetch Profile
+      const { data: profile, error: pError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      // 2. Fetch Journals
       const { data: journals, error: jError } = await supabase
         .from('journals')
         .select('*')
@@ -81,16 +208,27 @@ export default function PatientDashboard() {
         .order('date', { ascending: false });
 
       if (!jError && journals) {
-        if (journals.length > 0) {
-          const j = journals[0];
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayEntry = journals.find(j => {
+          const entryDateStr = new Date(j.date).toISOString().slice(0, 10);
+          return entryDateStr === todayStr;
+        });
+
+        if (todayEntry) {
           setTodayJournal({
-            painLevel: j.pain_level,
-            mood: j.mood,
-            activity: j.activity,
-            notes: j.notes
+            painLevel: todayEntry.pain_level,
+            mood: todayEntry.mood,
+            activity: todayEntry.activity,
+            notes: todayEntry.notes
           });
+        } else {
+          setTodayJournal(null);
         }
         setCompletedCount(journals.filter(j => j.activity !== 'מנוחה').length);
+
+        if (!pError && profile) {
+          setProgressToGoal(calculateProgressToGoal(profile, journals));
+        }
       }
 
       // 2. Fetch Exercises
@@ -174,6 +312,53 @@ export default function PatientDashboard() {
     scheduleMockReminder('הגיע הזמן לתרגול היומי שלך! 🏋️‍♂️');
   };
 
+  const handleToggleReminder = (e) => {
+    const val = e.target.checked;
+    setReminderEnabled(val);
+    localStorage.setItem('sportag_reminder_enabled', val ? 'true' : 'false');
+    if (val) {
+      if (!notificationsEnabled) {
+        handleEnableNotifications();
+      }
+    }
+  };
+
+  const handleTimeChange = (e) => {
+    const val = e.target.value;
+    setReminderTime(val);
+    localStorage.setItem('sportag_reminder_time', val);
+  };
+
+  const handleGoogleCalendarSync = () => {
+    const title = encodeURIComponent('תרגול פיזיותרפיה - Sportag');
+    
+    let exercisesDesc = 'תוכנית תרגול יומית בפיזיותרפיה.\n\nהתרגילים שלך להיום:\n';
+    exercises.forEach((ex, idx) => {
+      exercisesDesc += `${idx + 1}. ${ex.nameHe || ex.name} (${ex.sets} סטים x ${ex.reps} חזרות)\n`;
+      if (ex.description) {
+        exercisesDesc += `   הנחיות: ${ex.description}\n`;
+      }
+    });
+    exercisesDesc += '\nקישור ישיר לאפליקציה: https://sportag-pilot.vercel.app';
+    const details = encodeURIComponent(exercisesDesc);
+    const recur = encodeURIComponent('RRULE:FREQ=DAILY');
+    
+    const timeVal = reminderTime || '19:00';
+    const [hh, mm] = timeVal.split(':');
+    
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(hh), parseInt(mm), 0);
+    const end = new Date(start.getTime() + 30 * 60 * 1000); 
+    
+    const formatGCalDate = (date) => {
+      return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    };
+    
+    const dates = `${formatGCalDate(start)}/${formatGCalDate(end)}`;
+    const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&recur=${recur}`;
+    window.open(gCalUrl, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="empty-state" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
@@ -201,7 +386,7 @@ export default function PatientDashboard() {
       {/* How are you feeling card */}
       <div
         className="glass-card mb-6 animate-fade-in-up"
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: 'pointer', border: todayJournal ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)' }}
         onClick={() => navigate('/patient/journal')}
       >
         <div className="flex items-center justify-between">
@@ -210,13 +395,20 @@ export default function PatientDashboard() {
               {todayJournal ? getPainEmoji(todayJournal.painLevel) : '🤔'}
             </div>
             <div>
-              <h3 className="font-semibold">איך אתה מרגיש היום?</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold" style={{ margin: 0 }}>איך אתה מרגיש היום?</h3>
+                {todayJournal ? (
+                  <span className="badge badge-success text-xxs font-bold" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '2px 6px', borderRadius: '4px' }}>מולא ✓</span>
+                ) : (
+                  <span className="badge badge-warning text-xxs font-bold" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', padding: '2px 6px', borderRadius: '4px' }}>טרם מולא ⚠️</span>
+                )}
+              </div>
               {todayJournal ? (
-                <p className="text-sm text-secondary">
+                <p className="text-sm text-secondary mt-1" style={{ margin: 0 }}>
                   דרגת כאב: {todayJournal.painLevel}/10 • מצב רוח: {todayJournal.mood}
                 </p>
               ) : (
-                <p className="text-sm text-secondary">לחץ כדי לעדכן את המעקב היומי שלך</p>
+                <p className="text-sm text-secondary mt-1" style={{ margin: 0 }}>לחץ כדי לעדכן את המעקב היומי שלך</p>
               )}
             </div>
           </div>
@@ -228,27 +420,31 @@ export default function PatientDashboard() {
       <div className="stats-grid animate-fade-in-up stagger-2">
         <StatsCard
           icon={TrendingDown}
-          value={todayJournal?.painLevel || '-'}
+          value={todayJournal?.painLevel !== undefined ? todayJournal.painLevel : (todayJournal?.pain_level !== undefined ? todayJournal.pain_level : '-')}
           label="דרגת כאב"
           color="#E22279"
+          onClick={() => navigate('/patient/progress?scrollTo=pain-section')}
         />
         <StatsCard
           icon={Dumbbell}
           value={`${todayJournal ? 1 : 0}/${exercises.length}`}
           label="תרגילים היום"
           color="#10B981"
+          onClick={() => navigate('/patient/exercises')}
         />
         <StatsCard
           icon={Calendar}
           value={nextSession ? new Date(nextSession.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' }) : '-'}
           label="פגישה הבאה"
           color="#0891B2"
+          onClick={() => navigate('/patient/journal')}
         />
         <StatsCard
-          icon={Smile}
-          value={`${completedCount} ימים`}
-          label="ימי תרגול"
+          icon={Target}
+          value={`${progressToGoal}%`}
+          label="התקדמות ליעד"
           color="#8B5CF6"
+          onClick={() => navigate('/patient/progress?scrollTo=targets-section')}
         />
       </div>
 
@@ -334,11 +530,13 @@ export default function PatientDashboard() {
       <div className="grid-2 mt-6 animate-fade-in-up stagger-4">
         <button
           className="card card-hover text-center"
-          style={{ cursor: 'pointer', border: 'none', width: '100%' }}
+          style={{ cursor: 'pointer', border: todayJournal ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(245, 158, 11, 0.2)', width: '100%' }}
           onClick={() => navigate('/patient/journal')}
         >
-          <ClipboardList size={28} style={{ color: 'var(--color-primary-light)', margin: '0 auto var(--space-2)' }} />
-          <div className="font-semibold text-sm">עדכון מעקב יומי</div>
+          <ClipboardList size={28} style={{ color: todayJournal ? '#10B981' : 'var(--color-primary-light)', margin: '0 auto var(--space-2)' }} />
+          <div className="font-semibold text-sm">
+            {todayJournal ? 'עדכון מעקב יומי (✓ מולא)' : 'עדכון מעקב יומי (⚠️ טרם מולא)'}
+          </div>
         </button>
         <button
           className="card card-hover text-center"
@@ -352,26 +550,74 @@ export default function PatientDashboard() {
 
       {/* Reminders Testing */}
       <div className="card mt-6 animate-fade-in-up stagger-5">
-        <h3 className="section-title" style={{ fontSize: 'var(--font-size-md)' }}>🔔 תזכורות תרגול</h3>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-xs text-secondary" style={{ flex: 1, minWidth: 200, lineHeight: 1.4 }}>
-            קבל תזכורות יומיות ישירות לטלפון כדי לשמור על רצף התרגול והמעקב הרפואי.
+        <h3 className="section-title flex items-center gap-2" style={{ fontSize: 'var(--font-size-md)' }}>
+          <span>🔔 תזכורות תרגול חכמות</span>
+        </h3>
+        
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-secondary mb-1" style={{ lineHeight: 1.4 }}>
+            הגדר תזכורת יומית אוטומטית או סנכרן את תוכנית התרגול ישירות ללוח השנה שלך ב-Google.
           </p>
-          {notificationsEnabled ? (
-            <button 
-              className="btn btn-teal btn-sm"
-              onClick={handleTestNotification}
-            >
-              שלח תזכורת לבדיקה
-            </button>
-          ) : (
-            <button 
-              className="btn btn-primary btn-sm"
-              onClick={handleEnableNotifications}
-            >
-              אפשר תזכורות במכשיר
-            </button>
-          )}
+
+          <div className="flex flex-col gap-3" style={{ background: 'var(--bg-tertiary)', padding: 'var(--space-3)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', direction: 'rtl' }}>
+            {/* Automatic Reminder Switch */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold">
+                <input
+                  type="checkbox"
+                  checked={reminderEnabled}
+                  onChange={handleToggleReminder}
+                  style={{ width: 16, height: 16, accentColor: 'var(--color-primary-light)' }}
+                />
+                <span>הפעל תזכורת יומית אוטומטית</span>
+              </label>
+              
+              {reminderEnabled && (
+                <input
+                  type="time"
+                  className="input input-sm text-xs"
+                  style={{ width: '90px', padding: '2px 6px', textAlign: 'center' }}
+                  value={reminderTime}
+                  onChange={handleTimeChange}
+                />
+              )}
+            </div>
+
+            {/* Google Calendar Sync */}
+            <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px dashed var(--border-color)' }}>
+              <span className="text-xs text-secondary font-medium">סנכרון ללוח השנה של גוגל:</span>
+              <button
+                type="button"
+                className="btn btn-teal btn-xs"
+                onClick={handleGoogleCalendarSync}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '4px 10px' }}
+              >
+                📅 חבר ללוח השנה (Google)
+              </button>
+            </div>
+          </div>
+
+          {/* Test reminder */}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-xs text-muted">רוצה לבדוק איך נראית התזכורת?</span>
+            {notificationsEnabled ? (
+              <button 
+                className="btn btn-ghost btn-sm"
+                onClick={handleTestNotification}
+                style={{ border: '1px solid var(--border-color)', fontSize: '11px' }}
+              >
+                שלח תזכורת לבדיקה (5 שניות)
+              </button>
+            ) : (
+              <button 
+                className="btn btn-primary btn-sm"
+                onClick={handleEnableNotifications}
+                style={{ fontSize: '11px' }}
+              >
+                אפשר התראות בדפדפן
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

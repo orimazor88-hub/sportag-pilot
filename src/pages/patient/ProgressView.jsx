@@ -1,5 +1,6 @@
 // === Progress View ===
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { mockJournalEntries, mockPatients } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
@@ -11,6 +12,7 @@ import { TrendingDown, TrendingUp, Award, Target, Info } from 'lucide-react';
 
 export default function ProgressView() {
   const { user, isMockMode } = useAuth();
+  const location = useLocation();
   const [patient, setPatient] = useState(null);
   const [journalHistory, setJournalHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +20,18 @@ export default function ProgressView() {
   useEffect(() => {
     loadProgressData();
   }, [user, isMockMode]);
+
+  useEffect(() => {
+    if (!loading) {
+      const params = new URLSearchParams(location.search);
+      const scrollToId = params.get('scrollTo');
+      if (scrollToId) {
+        setTimeout(() => {
+          document.getElementById(scrollToId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
+      }
+    }
+  }, [loading, location.search]);
 
   const loadProgressData = async () => {
     if (!user) return;
@@ -137,38 +151,63 @@ export default function ProgressView() {
 
   const entries = journalHistory.slice().reverse();
 
-  const painData = entries.map(e => ({
-    date: new Date(e.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' }),
-    pain: e.painLevel,
-    energy: e.energy,
-  }));
+  // Unique Pain Data by date label to prevent repeats on the X-axis
+  const uniquePainDataMap = new Map();
+  entries.forEach(e => {
+    const dateLabel = new Date(e.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
+    uniquePainDataMap.set(dateLabel, {
+      date: dateLabel,
+      pain: e.painLevel,
+      energy: e.energy,
+    });
+  });
+  const painData = Array.from(uniquePainDataMap.values());
 
   const weeklyAvg = (data, key) => {
-    const sum = data.reduce((acc, d) => acc + d[key], 0);
+    if (data.length === 0) return '0.0';
+    const sum = data.reduce((acc, d) => acc + (d[key] || 0), 0);
     return (sum / data.length).toFixed(1);
   };
 
-  const exerciseData = entries.map(e => ({
-    date: new Date(e.date).toLocaleDateString('he-IL', { day: 'numeric' }),
-    completed: e.exercisesCompleted ? 1 : 0,
-  }));
+  // Unique Exercise Compliance by date label
+  const uniqueExerciseMap = new Map();
+  entries.forEach(e => {
+    const dateLabel = new Date(e.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
+    uniqueExerciseMap.set(dateLabel, {
+      date: dateLabel,
+      completed: e.exercisesCompleted ? 1 : 0,
+    });
+  });
+  const exerciseData = Array.from(uniqueExerciseMap.values());
 
-  // Synced Device Steps / Distance Data
-  const deviceData = entries.map(e => ({
-    date: new Date(e.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' }),
-    steps: e.stepsCount || 0,
-    distance: e.distanceKm || 0,
-  })).filter(d => d.steps > 0);
+  // Unique Device Steps by date label
+  const uniqueDeviceMap = new Map();
+  entries.forEach(e => {
+    if (e.stepsCount > 0) {
+      const dateLabel = new Date(e.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
+      uniqueDeviceMap.set(dateLabel, {
+        date: dateLabel,
+        steps: e.stepsCount || 0,
+        distance: e.distanceKm || 0,
+      });
+    }
+  });
+  const deviceData = Array.from(uniqueDeviceMap.values());
 
-  // Clinical & Functional Metrics Data (from Therapist)
-  const metricsData = patient.metricsHistory?.map(m => ({
-    date: new Date(m.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' }),
-    rom: m.rom,
-    strength: m.strength,
-    walking: m.walking,
-    stairs: m.stairs,
-    running: m.running,
-  })) || [];
+  // Unique Therapist Evaluation Clinical Metrics by date label
+  const uniqueMetricsMap = new Map();
+  (patient.metricsHistory || []).forEach(m => {
+    const dateLabel = new Date(m.date).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
+    uniqueMetricsMap.set(dateLabel, {
+      date: dateLabel,
+      rom: m.rom,
+      strength: m.strength,
+      walking: m.walking,
+      stairs: m.stairs,
+      running: m.running,
+    });
+  });
+  const metricsData = Array.from(uniqueMetricsMap.values());
 
   // Dynamic Targets & Progress Calculations
   const targets = patient.targets || {
@@ -308,14 +347,18 @@ export default function ProgressView() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">📈 ההתקדמות שלי</h1>
+          <h1 className="page-title">📈 ההתקדמות שלי נכון לתאריך: {new Date().toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' })}</h1>
           <p className="page-subtitle">מעקב לאורך זמן</p>
         </div>
       </div>
 
       {/* Summary Cards */}
       <div className="stats-grid animate-fade-in-up mb-6" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-        <div className="stat-card">
+        <div 
+          className="stat-card card-hover" 
+          onClick={() => document.getElementById('compliance-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          style={{ cursor: 'pointer' }}
+        >
           <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.2)', color: '#10B981' }}>
             <Award size={22} />
           </div>
@@ -324,7 +367,11 @@ export default function ProgressView() {
           </div>
           <div className="stat-label">התמדה בתרגילים</div>
         </div>
-        <div className="stat-card">
+        <div 
+          className="stat-card card-hover" 
+          onClick={() => document.getElementById('targets-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          style={{ cursor: 'pointer' }}
+        >
           <div className="stat-icon" style={{ background: 'rgba(6,182,212,0.2)', color: '#06B6D4' }}>
             <Target size={22} />
           </div>
@@ -335,7 +382,11 @@ export default function ProgressView() {
             התקדמות ליעד ({targets.targetDate ? `עד ל-${new Date(targets.targetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric', year: 'numeric'})}` : 'פגישה הבאה'})
           </div>
         </div>
-        <div className="stat-card">
+        <div 
+          className="stat-card card-hover" 
+          onClick={() => document.getElementById('pain-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          style={{ cursor: 'pointer' }}
+        >
           <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.2)', color: '#F59E0B' }}>
             <TrendingDown size={22} />
           </div>
@@ -345,61 +396,107 @@ export default function ProgressView() {
       </div>
 
       {/* Explanation Box */}
-      <div className="card mb-6 animate-fade-in-up stagger-1" style={{ border: '1px solid rgba(38, 98, 137, 0.2)', background: 'rgba(38, 98, 137, 0.03)' }}>
-        <div className="flex gap-2 items-start">
-          <Info className="text-primary-light mt-1 flex-shrink-0" size={18} />
-          <div>
-            <strong className="text-sm text-primary-light">כיצד נקבעים מדדי ההתקדמות שלי?</strong>
-            <p className="text-xs text-secondary mt-1" style={{ lineHeight: 1.7 }}>
-              הפיזיותרפיסט שלך הגדיר עבורך ערכי בסיס (מצב התחלתי) ויעד טיפול עם תאריך יעד ברור.
+      <div className="card mb-6 animate-fade-in-up stagger-1" style={{ border: '1px solid rgba(38, 98, 137, 0.25)', background: 'linear-gradient(135deg, rgba(38, 98, 137, 0.05) 0%, rgba(8, 145, 178, 0.05) 100%)', direction: 'rtl' }}>
+        <div className="flex gap-2 items-start mb-3">
+          <Info className="text-primary-light mt-0.5 flex-shrink-0" size={20} />
+          <h4 className="font-bold text-sm text-primary-light" style={{ margin: 0 }}>הסבר על מדדי ההתקדמות והחישובים במערכת</h4>
+        </div>
+        
+        <div className="flex flex-col gap-4 text-xs text-secondary" style={{ lineHeight: 1.6 }}>
+          {/* Consistency */}
+          <div style={{ borderRight: '3px solid #10B981', paddingRight: '10px' }}>
+            <strong className="text-sm" style={{ color: '#10B981' }}>📊 מדד התמדה ({complianceScore}%)</strong>
+            <p className="mt-0.5" style={{ margin: 0 }}>
+              <strong>מה זה אומר?</strong> מידת העקביות שלך בביצוע התרגילים הביתיים שהוקצו לך.
               <br />
-              ההתקדמות שלך מורכבת מ<strong>ציון התמדה בתרגול</strong> (מבוסס על דיווחי התרגול הביתיומיים שלך) ומ<strong>ציונים קליניים</strong> המודדים כמה השתפרו המדדים הפיזיולוגיים (כאב, כוח וטווחי תנועה) בפועל.
+              <strong>כיצד מחושב?</strong> אחוז הימים שבהם סימנת שביצעת את התרגילים מתוך סך הימים שבהם מילאת מעקב יומי. מומלץ לשמור על התמדה של מעל 80% להשגת תוצאות שיקום מרביות.
+            </p>
+          </div>
+
+          {/* Progress */}
+          <div style={{ borderRight: '3px solid #06B6D4', paddingRight: '10px' }}>
+            <strong className="text-sm" style={{ color: '#06B6D4' }}>🎯 מדד התקדמות ({avgProgress}%)</strong>
+            <p className="mt-0.5" style={{ margin: 0 }}>
+              <strong>מה זה אומר?</strong> ההתקדמות הכללית שלך לעומת יעדי הטיפול שהוגדרו.
+              <br />
+              <strong>כיצד מחושב?</strong> הממוצע של אחוזי השיפור בכל המדדים הפעילים שלך (רמת הכאב, טווח התנועה, כוח השריר, ומדדי התפקוד של גפה תחתונה כמו הליכה, מדרגות וריצה) יחסית לנקודת ההתחלה (בסרגל של 0% עד 100% הגעה ליעד).
+            </p>
+          </div>
+
+          {/* Pain Level */}
+          <div style={{ borderRight: '3px solid #E22279', paddingRight: '10px' }}>
+            <strong className="text-sm" style={{ color: '#E22279' }}>⚡ דרגת כאב נוכחית ({currentPainVal}/10)</strong>
+            <p className="mt-0.5" style={{ margin: 0 }}>
+              <strong>מה זה אומר?</strong> עוצמת הכאב הנוכחית באזור הפגוע.
+              <br />
+              <strong>כיצד מחושב?</strong> ציון הכאב האחרון שדיווחת עליו במעקב היומי בסולם VAS (בין 0 ל-10). ציון 0 פירושו ללא כאב כלל, וציון 10 פירושו כאב עז ביותר.
             </p>
           </div>
         </div>
       </div>
 
       {/* Target Checklist */}
-      <div className="card mb-6 animate-fade-in-up stagger-1">
+      <div id="targets-section" className="card mb-6 animate-fade-in-up stagger-1">
         <h3 className="section-title">היעדים שהגדיר לי המטפל שלי</h3>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="w-full text-sm" style={{ borderCollapse: 'collapse', textAlign: 'right' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>מדד קליני</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>ערך התחלתי</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>מצב נוכחי</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>
-                  יעד ({targets.targetDate ? `עד ל-${new Date(targets.targetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric', year: 'numeric'})}` : 'פגישה הבאה'})
-                </th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>סטטוס</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeMetrics.map((m, idx) => {
-                const status = getStatus(m);
-                return (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: 'var(--space-3)', fontWeight: 600 }}>{m.name}</td>
-                    <td style={{ padding: 'var(--space-3)' }}>{m.initial}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
-                    <td style={{ padding: 'var(--space-3)', color: 'var(--text-primary)', fontWeight: 600 }}>{m.current}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
-                    <td style={{ padding: 'var(--space-3)', color: '#06B6D4' }}>{m.target}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
-                    <td style={{ padding: 'var(--space-3)' }}>
-                      <span className={`badge ${status.badgeClass}`}>
-                        <span style={{ marginLeft: 4 }}>{status.dot}</span>
-                        <span>{status.label}</span>
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div style={{ position: 'relative' }}>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table className="w-full text-sm" style={{ borderCollapse: 'collapse', textAlign: 'right', minWidth: '550px' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                  <th style={{ padding: 'var(--space-2) var(--space-3)' }}>מדד קליני</th>
+                  <th style={{ padding: 'var(--space-2) var(--space-3)' }}>ערך התחלתי</th>
+                  <th style={{ padding: 'var(--space-2) var(--space-3)' }}>מצב נוכחי</th>
+                  <th style={{ padding: 'var(--space-2) var(--space-3)' }}>
+                    יעד ({targets.targetDate ? `עד ל-${new Date(targets.targetDate).toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric', year: 'numeric'})}` : 'פגישה הבאה'})
+                  </th>
+                  <th style={{ padding: 'var(--space-2) var(--space-3)' }}>סטטוס</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeMetrics.map((m, idx) => {
+                  const status = getStatus(m);
+                  return (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: 'var(--space-3)', fontWeight: 600 }}>{m.name}</td>
+                      <td style={{ padding: 'var(--space-3)' }}>{m.initial}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
+                      <td style={{ padding: 'var(--space-3)', color: 'var(--text-primary)', fontWeight: 600 }}>{m.current}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
+                      <td style={{ padding: 'var(--space-3)', color: '#06B6D4' }}>{m.target}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <span className={`badge ${status.badgeClass}`}>
+                          <span style={{ marginLeft: 4 }}>{status.dot}</span>
+                          <span>{status.label}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {/* Horizontal Scroll indicator on small screens */}
+          <div className="hide-desktop animate-pulse" style={{
+            position: 'absolute',
+            left: '8px',
+            bottom: '8px',
+            background: 'var(--bg-glass)',
+            backdropFilter: 'blur(4px)',
+            padding: '2px 8px',
+            borderRadius: '10px',
+            border: '1px solid var(--border-color)',
+            fontSize: '9px',
+            color: 'var(--text-secondary)',
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            <span>⬅️ החלק לצדדים לצפייה בטבלה</span>
+          </div>
         </div>
       </div>
 
       {/* Pain Chart */}
-      <div className="card mb-4 animate-fade-in-up stagger-2">
+      <div id="pain-section" className="card mb-4 animate-fade-in-up stagger-2">
         <h3 className="section-title">מגמת כאב</h3>
         <div style={{ width: '100%', height: 220 }}>
           <ResponsiveContainer>
@@ -537,7 +634,7 @@ export default function ProgressView() {
       )}
 
       {/* Exercise Compliance */}
-      <div className="card mb-4 animate-fade-in-up stagger-3">
+      <div id="compliance-section" className="card mb-4 animate-fade-in-up stagger-3">
         <h3 className="section-title">עמידה בתרגילים</h3>
         <div style={{ width: '100%', height: 150 }}>
           <ResponsiveContainer>

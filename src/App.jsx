@@ -45,6 +45,41 @@ function AppLayout() {
     };
   }, []);
 
+  // Background timer to check for daily reminder
+  useEffect(() => {
+    const checkReminder = () => {
+      const enabled = localStorage.getItem('sportag_reminder_enabled') === 'true';
+      if (!enabled) return;
+
+      const timeVal = localStorage.getItem('sportag_reminder_time') || '19:00';
+      const [hh, mm] = timeVal.split(':');
+      
+      const now = new Date();
+      const currentH = now.getHours();
+      const currentM = now.getMinutes();
+      
+      if (currentH === parseInt(hh) && currentM === parseInt(mm)) {
+        const todayDateStr = now.toDateString();
+        const lastFired = localStorage.getItem('sportag_last_reminder_fired');
+        
+        if (lastFired !== todayDateStr) {
+          localStorage.setItem('sportag_last_reminder_fired', todayDateStr);
+          // Trigger the PWA local notification
+          import('./services/notificationService').then(({ showLocalNotification }) => {
+            showLocalNotification('Physio-AI Pro - תזכורת תרגול', {
+              body: 'הגיע הזמן לתרגול היומי שלך! 💪',
+              tag: 'workout-reminder'
+            });
+          });
+        }
+      }
+    };
+
+    checkReminder();
+    const interval = setInterval(checkReminder, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   if (!role) {
     return <Navigate to="/" replace />;
   }

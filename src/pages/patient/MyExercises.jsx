@@ -10,6 +10,7 @@ import { supabase } from '../../services/supabaseClient';
 export default function MyExercises() {
   const { user, isMockMode } = useAuth();
   const [exercises, setExercises] = useState([]);
+  const [mediaUploads, setMediaUploads] = useState([]);
   const [completedExercises, setCompletedExercises] = useState({});
   const [loading, setLoading] = useState(true);
   const location = useLocation();
@@ -23,21 +24,36 @@ export default function MyExercises() {
 
     if (isMockMode) {
       setExercises(mockExercises.slice(0, 3));
+      const saved = localStorage.getItem('sportag_uploads');
+      let mockMedia = [];
+      if (saved) {
+        try {
+          mockMedia = JSON.parse(saved);
+        } catch (e) {}
+      }
+      setMediaUploads(mockMedia);
       setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data: dbExercises, error: exErr } = await supabase
         .from('exercises')
         .select('*')
         .eq('patient_id', user.id)
         .order('assigned_date', { ascending: false });
 
-      if (error) throw error;
+      if (exErr) throw exErr;
 
-      setExercises((data || []).map(e => ({
+      const { data: dbMedia, error: mErr } = await supabase
+        .from('media_uploads')
+        .select('*')
+        .eq('patient_id', user.id);
+
+      if (mErr) console.warn('Could not fetch media uploads:', mErr);
+
+      setExercises((dbExercises || []).map(e => ({
         id: e.id,
         name: e.name,
         nameHe: e.name_he,
@@ -51,6 +67,19 @@ export default function MyExercises() {
         difficulty: e.difficulty,
         assignedDate: e.assigned_date,
         videoUrl: e.video_url
+      })));
+
+      setMediaUploads((dbMedia || []).map(item => ({
+        id: item.id,
+        type: item.type,
+        name: item.file_name,
+        title: item.title,
+        exerciseId: item.exercise_id,
+        date: item.date,
+        note: item.note,
+        persistedUrl: item.file_url,
+        thumbnailUrl: item.thumbnail_url,
+        uploadedBy: 'patient'
       })));
     } catch (err) {
       console.error('Error loading exercises:', err);
@@ -166,6 +195,7 @@ export default function MyExercises() {
               exercise={exercise}
               completed={completedExercises[exercise.id] || false}
               onComplete={(isDone) => handleComplete(exercise.id, isDone)}
+              customUploads={mediaUploads}
             />
           </div>
         ))}

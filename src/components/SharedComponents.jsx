@@ -57,9 +57,13 @@ export function PainScale({ value, onChange, size = 'default' }) {
 }
 
 // --- Stats Card ---
-export function StatsCard({ icon: Icon, value, label, color, trend, className = '' }) {
+export function StatsCard({ icon: Icon, value, label, color, trend, className = '', onClick }) {
   return (
-    <div className={`stat-card ${className}`}>
+    <div 
+      className={`stat-card ${className} ${onClick ? 'stat-card-clickable' : ''}`}
+      onClick={onClick}
+      style={onClick ? { cursor: 'pointer' } : undefined}
+    >
       <div
         className="stat-icon"
         style={{ background: `${color}20`, color: color }}
@@ -137,8 +141,9 @@ export function PatientCard({ patient, onClick, compact = false }) {
 }
 
 // --- Exercise Card ---
-export function ExerciseCard({ exercise, onComplete, completed = false }) {
-  const { uploads, setUploads } = useAuth();
+export function ExerciseCard({ exercise, onComplete, completed = false, customUploads }) {
+  const { uploads: contextUploads, setUploads } = useAuth();
+  const uploads = customUploads || contextUploads || [];
   const [isDone, setIsDone] = useState(completed);
   const [activeMedia, setActiveMedia] = useState(null);
   const [showTherapistUpload, setShowTherapistUpload] = useState(false);
@@ -185,6 +190,7 @@ export function ExerciseCard({ exercise, onComplete, completed = false }) {
 
   const exerciseUploads = (uploads || []).filter(item => item.exerciseId === exercise.id);
   const clinicVideos = [...exerciseUploads.filter(item => item.uploadedBy === 'therapist')];
+  const patientVideos = [...exerciseUploads.filter(item => item.uploadedBy !== 'therapist')];
 
   const exerciseVideoUrl = exercise.videoUrl || exercise.video_url;
   if (exerciseVideoUrl) {
@@ -308,6 +314,50 @@ export function ExerciseCard({ exercise, onComplete, completed = false }) {
         </div>
       )}
 
+      {/* Patient Uploaded Performance Videos */}
+      {patientVideos.length > 0 && (
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="text-xs font-bold text-secondary">
+            💪 ביצועים שלי שהעליתי:
+          </div>
+          {patientVideos.map((video) => (
+            <div 
+              key={video.id}
+              onClick={() => setActiveMedia(video)}
+              className="card card-compact card-hover flex-row items-center gap-3 animate-fade-in"
+              style={{ 
+                padding: 'var(--space-2)', 
+                background: 'var(--bg-tertiary)', 
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                cursor: 'pointer',
+                margin: 0
+              }}
+            >
+              <div style={{ width: 60, height: 45, borderRadius: 'var(--radius-sm)', overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
+                {video.thumbnailUrl ? (
+                  <img src={video.thumbnailUrl} alt="my performance" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', background: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Play size={14} style={{ color: 'white' }} />
+                  </div>
+                )}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="font-bold text-xs" style={{ color: '#10B981', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>סרטון ביצוע שלי</span>
+                  <span className="text-muted" style={{ fontSize: '9px', fontWeight: 'normal' }}>{new Date(video.date).toLocaleDateString('he-IL')}</span>
+                </div>
+                {video.note && (
+                  <div className="text-secondary text-xs truncate" style={{ fontSize: '10px' }}>
+                    הערה: {video.note}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Upload button for therapist */}
       {!isPatient && (
         <div className="mt-3">
@@ -353,6 +403,30 @@ export function ExerciseCard({ exercise, onComplete, completed = false }) {
               ➕ צלם/העלה וידאו ביקור מהקליניקה
             </button>
           )}
+        </div>
+      )}
+
+      {/* Upload button for patient */}
+      {isPatient && (
+        <div className="mt-3">
+          <button
+            type="button"
+            className="btn btn-ghost w-full"
+            onClick={() => navigate(`/patient/upload?exerciseId=${exercise.id}`)}
+            style={{
+              border: '1px dashed var(--border-color)',
+              color: 'var(--color-teal)',
+              padding: 'var(--space-2) var(--space-3)',
+              fontSize: 'var(--font-size-xs)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px'
+            }}
+          >
+            <Camera size={14} />
+            ➕ צלם/העלה ביצוע שלי לתרגיל
+          </button>
         </div>
       )}
 

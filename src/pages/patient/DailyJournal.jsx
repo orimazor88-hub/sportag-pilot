@@ -24,6 +24,7 @@ function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
 export default function DailyJournal() {
   const { user, isMockMode } = useAuth();
   
+  const [todayEntryId, setTodayEntryId] = useState(null);
   const [painLevel, setPainLevel] = useState(4);
   const [selectedArea, setSelectedArea] = useState('knee-r');
   const [mood, setMood] = useState('טוב');
@@ -56,6 +57,63 @@ export default function DailyJournal() {
     { label: 'לא טוב', emoji: '😞', value: 'לא טוב' },
   ];
 
+  const prefillForm = (history) => {
+    if (!history || history.length === 0) return;
+    
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayEntry = history.find(entry => {
+      const entryDateStr = new Date(entry.date).toISOString().slice(0, 10);
+      return entryDateStr === todayStr;
+    });
+
+    if (todayEntry) {
+      setTodayEntryId(todayEntry.id);
+      setPainLevel(todayEntry.pain_level !== undefined ? todayEntry.pain_level : (todayEntry.painLevel ?? 4));
+      setSelectedArea(todayEntry.pain_location ?? todayEntry.painLocation ?? 'knee-r');
+      setMood(todayEntry.mood ?? 'טוב');
+      setEnergy(todayEntry.energy ?? 7);
+      setSleep(todayEntry.sleep ?? 7);
+      setActivity(todayEntry.activity ?? '');
+      setNotes(todayEntry.notes ?? '');
+      if (todayEntry.walking_score !== undefined) setWalking(todayEntry.walking_score);
+      else if (todayEntry.walkingScore !== undefined) setWalking(todayEntry.walkingScore);
+      
+      if (todayEntry.stairs_score !== undefined) setStairs(todayEntry.stairs_score);
+      else if (todayEntry.stairsScore !== undefined) setStairs(todayEntry.stairsScore);
+      
+      if (todayEntry.running_score !== undefined) setRunning(todayEntry.running_score);
+      else if (todayEntry.runningScore !== undefined) setRunning(todayEntry.runningScore);
+      
+      setDeviceSynced(todayEntry.device_synced ?? todayEntry.deviceSynced ?? false);
+      setDeviceType(todayEntry.device_type ?? todayEntry.deviceType ?? '');
+      setStepsCount(todayEntry.steps_count ?? todayEntry.stepsCount ?? 0);
+      setDistanceKm(todayEntry.distance_km ?? todayEntry.distanceKm ?? 0);
+    } else {
+      const latestEntry = history[0];
+      setTodayEntryId(null);
+      setPainLevel(latestEntry.pain_level !== undefined ? latestEntry.pain_level : (latestEntry.painLevel ?? 4));
+      setSelectedArea(latestEntry.pain_location ?? latestEntry.painLocation ?? 'knee-r');
+      setMood(latestEntry.mood ?? 'טוב');
+      setEnergy(latestEntry.energy ?? 7);
+      setSleep(latestEntry.sleep ?? 7);
+      setActivity('');
+      setNotes('');
+      if (latestEntry.walking_score !== undefined) setWalking(latestEntry.walking_score);
+      else if (latestEntry.walkingScore !== undefined) setWalking(latestEntry.walkingScore);
+      
+      if (latestEntry.stairs_score !== undefined) setStairs(latestEntry.stairs_score);
+      else if (latestEntry.stairsScore !== undefined) setStairs(latestEntry.stairsScore);
+      
+      if (latestEntry.running_score !== undefined) setRunning(latestEntry.running_score);
+      else if (latestEntry.runningScore !== undefined) setRunning(latestEntry.runningScore);
+      
+      setDeviceSynced(false);
+      setDeviceType('');
+      setStepsCount(0);
+      setDistanceKm(0);
+    }
+  };
+
   // Load past journals
   useEffect(() => {
     loadJournals();
@@ -66,6 +124,7 @@ export default function DailyJournal() {
     
     if (isMockMode) {
       setJournalHistory(mockJournalEntries);
+      prefillForm(mockJournalEntries);
       return;
     }
 
@@ -78,6 +137,7 @@ export default function DailyJournal() {
 
       if (error) throw error;
       setJournalHistory(data || []);
+      prefillForm(data || []);
     } catch (err) {
       console.error('Error loading journals:', err);
     }
@@ -182,8 +242,14 @@ export default function DailyJournal() {
       device_type: deviceType
     };
 
+    const todayStr = new Date().toISOString().slice(0, 10);
     if (isMockMode) {
-      mockJournalEntries.unshift({ ...journalData, patientId: user.id });
+      const existingIdx = mockJournalEntries.findIndex(e => e.date === todayStr && e.patientId === user.id);
+      if (existingIdx !== -1) {
+        mockJournalEntries[existingIdx] = { ...mockJournalEntries[existingIdx], ...journalData };
+      } else {
+        mockJournalEntries.unshift({ ...journalData, id: Date.now().toString(), patientId: user.id });
+      }
       setSaved(true);
       loadJournals();
       setTimeout(() => setSaved(false), 3000);
@@ -191,13 +257,22 @@ export default function DailyJournal() {
     }
 
     try {
-      const { error } = await supabase
-        .from('journals')
-        .insert([{
-          patient_id: user.id,
-          ...journalData
-        }]);
+      let query;
+      if (todayEntryId) {
+        query = supabase
+          .from('journals')
+          .update(journalData)
+          .eq('id', todayEntryId);
+      } else {
+        query = supabase
+          .from('journals')
+          .insert([{
+            patient_id: user.id,
+            ...journalData
+          }]);
+      }
 
+      const { error } = await query;
       if (error) throw error;
       setSaved(true);
       loadJournals();
@@ -208,10 +283,17 @@ export default function DailyJournal() {
     }
   };
 
-  const painData = journalHistory.slice(0, 7).reverse().map(entry => ({
-    date: new Date(entry.date).toLocaleDateString('he-IL', { weekday: 'short' }),
-    pain: entry.pain_level !== undefined ? entry.pain_level : entry.painLevel,
-  }));
+  const uniqueDateMap = new Map();
+  journalHistory.slice().reverse().forEach(entry => {
+    const dateKey = entry.date ? entry.date.slice(0, 10) : '';
+    if (!dateKey) return;
+    const painVal = entry.pain_level !== undefined ? entry.pain_level : entry.painLevel;
+    uniqueDateMap.set(dateKey, {
+      date: new Date(entry.date).toLocaleDateString('he-IL', { weekday: 'short' }),
+      pain: painVal
+    });
+  });
+  const painData = Array.from(uniqueDateMap.values()).slice(-7);
 
   return (
     <div>
@@ -223,6 +305,35 @@ export default function DailyJournal() {
           </p>
         </div>
       </div>
+
+      {/* Today Saved Indicator Badge */}
+      {todayEntryId ? (
+        <div className="badge mb-4 w-full justify-center py-2 animate-fade-in" style={{
+          background: 'rgba(16, 185, 129, 0.15)',
+          color: '#10B981',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          display: 'flex',
+          gap: '6px',
+          borderRadius: 'var(--radius-md)',
+          fontSize: '13px',
+          fontWeight: 600
+        }}>
+          <span>✓ המעקב היומי להיום כבר נשמר במערכת (תוכל לעדכן אותו)</span>
+        </div>
+      ) : (
+        <div className="badge mb-4 w-full justify-center py-2 animate-fade-in" style={{
+          background: 'rgba(245, 158, 11, 0.12)',
+          color: '#F59E0B',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          display: 'flex',
+          gap: '6px',
+          borderRadius: 'var(--radius-md)',
+          fontSize: '13px',
+          fontWeight: 600
+        }}>
+          <span>⚠️ טרם מילאת מעקב יומי להיום (נא למלא ולשמור)</span>
+        </div>
+      )}
 
       {/* Toast */}
       {saved && (
@@ -480,10 +591,15 @@ export default function DailyJournal() {
       </div>
 
       {/* Save */}
-      <button className="btn btn-primary btn-lg w-full mb-6" onClick={handleSave}>
-        <Save size={18} />
-        שמור מעקב יומי
-      </button>
+      <div className="mb-6 flex flex-col gap-2">
+        <button className="btn btn-primary btn-lg w-full" onClick={handleSave}>
+          <Save size={18} />
+          {todayEntryId ? 'עדכן מעקב יומי' : 'שמור מעקב יומי'}
+        </button>
+        <p className="text-center text-xs text-secondary font-medium">
+          שומר מעקב עבור תאריך: {new Date().toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' })}
+        </p>
+      </div>
 
       {/* Weekly Trend */}
       {painData.length > 0 && (
