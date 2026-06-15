@@ -1,10 +1,10 @@
 // === Shared UI Components ===
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Shield, Mic, X, CheckCircle, AlertTriangle,
-  ChevronLeft, ChevronRight, Search, Play, Camera, Video
+  ChevronLeft, ChevronRight, Search, Play, Camera, Video, Save
 } from 'lucide-react';
 
 // --- Pain Scale ---
@@ -141,7 +141,7 @@ export function PatientCard({ patient, onClick, compact = false }) {
 }
 
 // --- Exercise Card ---
-export function ExerciseCard({ exercise, onComplete, completed = false, customUploads }) {
+export function ExerciseCard({ exercise, onComplete, completed = false, customUploads, exerciseNote, onNoteChange, onSave }) {
   const { uploads: contextUploads, setUploads } = useAuth();
   const uploads = customUploads || contextUploads || [];
   const [isDone, setIsDone] = useState(completed);
@@ -151,9 +151,15 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
   
   const therapistFileInputRef = useRef(null);
 
+  useEffect(() => {
+    setIsDone(completed);
+  }, [completed]);
+
   const handleComplete = () => {
-    setIsDone(!isDone);
-    onComplete?.(!isDone);
+    const nextCompletedVal = !isDone;
+    setIsDone(nextCompletedVal);
+    onComplete?.(nextCompletedVal);
+    onSave?.(nextCompletedVal, exerciseNote);
   };
 
   const navigate = useNavigate();
@@ -408,25 +414,97 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
 
       {/* Upload button for patient */}
       {isPatient && (
-        <div className="mt-3">
-          <button
-            type="button"
-            className="btn btn-ghost w-full"
-            onClick={() => navigate(`/patient/upload?exerciseId=${exercise.id}`)}
-            style={{
-              border: '1px dashed var(--border-color)',
-              color: 'var(--color-teal)',
-              padding: 'var(--space-2) var(--space-3)',
-              fontSize: 'var(--font-size-xs)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px'
-            }}
-          >
-            <Camera size={14} />
-            ➕ צלם/העלה ביצוע שלי לתרגיל
-          </button>
+        <div className="mt-3 flex flex-col gap-3">
+          {/* Note Input */}
+          <div style={{ direction: 'rtl' }} className="flex flex-col gap-1">
+            <label className="text-xxs font-bold text-secondary block" style={{ color: 'var(--text-secondary)' }}>הערה אישית שלי על התרגיל:</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="input input-sm text-xs flex-1"
+                value={exerciseNote || ''}
+                onChange={(e) => onNoteChange?.(e.target.value)}
+                placeholder="כאב קל בסוף, היה קל מדי, קושי בסט האחרון..."
+                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', height: '36px' }}
+              />
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => onSave?.(isDone, exerciseNote)}
+                style={{
+                  padding: '0 var(--space-3)',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Save size={14} />
+                שמור
+              </button>
+            </div>
+          </div>
+
+          {/* Camera Buttons Section */}
+          <div style={{ direction: 'rtl' }}>
+            <label className="text-xxs font-bold text-secondary mb-1 block" style={{ color: 'var(--text-secondary)' }}>צילום ותיעוד התרגיל לביקורת המטפל:</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn flex-1 animate-pulse-subtle"
+                onClick={() => {
+                  const currentNote = exerciseNote ? `&note=${encodeURIComponent(exerciseNote)}` : '';
+                  navigate(`/patient/upload?exerciseId=${exercise.id}&capture=image${currentNote}`);
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+                  color: 'white',
+                  padding: 'var(--space-3) var(--space-2)',
+                  fontSize: 'var(--font-size-xs)',
+                  fontWeight: 'bold',
+                  borderRadius: 'var(--radius-lg)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  border: 'none',
+                  boxShadow: 'var(--shadow-md)',
+                  cursor: 'pointer'
+                }}
+              >
+                <Camera size={15} />
+                📸 צלם תמונה
+              </button>
+              <button
+                type="button"
+                className="btn flex-1"
+                onClick={() => {
+                  const currentNote = exerciseNote ? `&note=${encodeURIComponent(exerciseNote)}` : '';
+                  navigate(`/patient/upload?exerciseId=${exercise.id}&capture=video${currentNote}`);
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                  color: 'white',
+                  padding: 'var(--space-3) var(--space-2)',
+                  fontSize: 'var(--font-size-xs)',
+                  fontWeight: 'bold',
+                  borderRadius: 'var(--radius-lg)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  border: 'none',
+                  boxShadow: 'var(--shadow-md)',
+                  cursor: 'pointer'
+                }}
+              >
+                <Video size={15} />
+                🎥 צלם וידאו
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

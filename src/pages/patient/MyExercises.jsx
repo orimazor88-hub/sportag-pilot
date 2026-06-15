@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { mockExercises } from '../../data/mockData';
 import { ExerciseCard } from '../../components/SharedComponents';
-import { CheckCircle, Trophy } from 'lucide-react';
+import { CheckCircle, Trophy, Save } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
@@ -12,6 +12,8 @@ export default function MyExercises() {
   const [exercises, setExercises] = useState([]);
   const [mediaUploads, setMediaUploads] = useState([]);
   const [completedExercises, setCompletedExercises] = useState({});
+  const [exerciseNotes, setExerciseNotes] = useState({});
+  const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
 
@@ -91,8 +93,65 @@ export default function MyExercises() {
   const totalCompleted = Object.values(completedExercises).filter(Boolean).length;
   const allDone = totalCompleted === exercises.length;
 
+  // Load from localStorage on user change
+  useEffect(() => {
+    if (user) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const savedDone = localStorage.getItem(`sportag_completed_exercises_${user.id}_${todayStr}`);
+      if (savedDone) {
+        try {
+          setCompletedExercises(JSON.parse(savedDone));
+        } catch (e) {}
+      } else {
+        setCompletedExercises({});
+      }
+
+      const savedNotes = localStorage.getItem(`sportag_exercise_notes_${user.id}_${todayStr}`);
+      if (savedNotes) {
+        try {
+          setExerciseNotes(JSON.parse(savedNotes));
+        } catch (e) {}
+      } else {
+        setExerciseNotes({});
+      }
+    }
+  }, [user]);
+
   const handleComplete = (exerciseId, isDone) => {
     setCompletedExercises(prev => ({ ...prev, [exerciseId]: isDone }));
+  };
+
+  const handleNoteChange = (exerciseId, newNote) => {
+    setExerciseNotes(prev => ({ ...prev, [exerciseId]: newNote }));
+  };
+
+  const handleSaveSingle = (exerciseId, isDone, noteText) => {
+    if (!user) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    
+    setCompletedExercises(prev => {
+      const updatedCompleted = { ...prev, [exerciseId]: isDone };
+      localStorage.setItem(`sportag_completed_exercises_${user.id}_${todayStr}`, JSON.stringify(updatedCompleted));
+      return updatedCompleted;
+    });
+
+    setExerciseNotes(prev => {
+      const updatedNotes = { ...prev, [exerciseId]: noteText || '' };
+      localStorage.setItem(`sportag_exercise_notes_${user.id}_${todayStr}`, JSON.stringify(updatedNotes));
+      return updatedNotes;
+    });
+
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleSave = () => {
+    if (!user) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    localStorage.setItem(`sportag_completed_exercises_${user.id}_${todayStr}`, JSON.stringify(completedExercises));
+    localStorage.setItem(`sportag_exercise_notes_${user.id}_${todayStr}`, JSON.stringify(exerciseNotes));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
   };
 
   useEffect(() => {
@@ -182,6 +241,14 @@ export default function MyExercises() {
         </div>
       </div>
 
+      {/* Toast */}
+      {saved && (
+        <div className="toast toast-success" style={{ zIndex: 1100 }}>
+          <CheckCircle size={18} />
+          הביצוע וההערות נשמרו בהצלחה!
+        </div>
+      )}
+
       {/* Exercises */}
       <div className="flex flex-col gap-4">
         {exercises.map((exercise, i) => (
@@ -196,9 +263,24 @@ export default function MyExercises() {
               completed={completedExercises[exercise.id] || false}
               onComplete={(isDone) => handleComplete(exercise.id, isDone)}
               customUploads={mediaUploads}
+              exerciseNote={exerciseNotes[exercise.id] || ''}
+              onNoteChange={(newNote) => handleNoteChange(exercise.id, newNote)}
+              onSave={(isDoneVal, noteVal) => handleSaveSingle(exercise.id, isDoneVal, noteVal)}
             />
           </div>
         ))}
+      </div>
+
+      {/* Save Button */}
+      <div className="mt-6 mb-6">
+        <button 
+          className="btn btn-primary btn-lg w-full" 
+          onClick={handleSave}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: 'var(--shadow-md)' }}
+        >
+          <Save size={18} />
+          שמור ביצוע והערות להיום
+        </button>
       </div>
 
       {/* Tip */}

@@ -52,9 +52,11 @@ const generateVideoThumbnail = (file) => {
 export default function MediaUpload() {
   const [searchParams] = useSearchParams();
   const exerciseIdFromUrl = searchParams.get('exerciseId');
+  const noteFromUrl = searchParams.get('note');
 
   const { uploads, setUploads, user, isMockMode } = useAuth();
   const [realUploads, setRealUploads] = useState([]);
+  const [patientExercises, setPatientExercises] = useState([]);
   
   const [showUpload, setShowUpload] = useState(false);
   const [note, setNote] = useState('');
@@ -69,18 +71,68 @@ export default function MediaUpload() {
   
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+  const triggeredRef = useRef(false);
+
+  // Fetch patient exercises
+  useEffect(() => {
+    loadPatientExercises();
+  }, [user]);
+
+  const loadPatientExercises = async () => {
+    if (!user) return;
+    if (isMockMode) {
+      // Seed fallback if mock exercises are empty
+      setPatientExercises(mockExercises.length > 0 ? mockExercises : [
+        { id: '1', nameHe: 'סקוואט קיר', category: 'ברך' },
+        { id: '2', nameHe: 'עמידה על רגל אחת', category: 'קרסול' }
+      ]);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('patient_id', user.id);
+      if (error) throw error;
+      setPatientExercises((data || []).map(e => ({
+        id: e.id,
+        nameHe: e.name_he,
+        category: e.category
+      })));
+    } catch (err) {
+      console.error('Error loading exercises in upload page:', err);
+    }
+  };
 
   useEffect(() => {
-    if (exerciseIdFromUrl) {
+    if (exerciseIdFromUrl && patientExercises.length > 0) {
       setAssociatedExerciseId(exerciseIdFromUrl);
       setShowUpload(true);
       
-      const ex = mockExercises.find(e => e.id === exerciseIdFromUrl);
+      const ex = patientExercises.find(e => e.id === exerciseIdFromUrl);
       if (ex) {
         setTitle(`תרגיל: ${ex.nameHe}`);
       }
+
+      if (noteFromUrl) {
+        setNote(noteFromUrl);
+      }
+
+      const captureMode = searchParams.get('capture');
+      if (captureMode && !triggeredRef.current) {
+        triggeredRef.current = true;
+        const timer = setTimeout(() => {
+          if (captureMode === 'image') {
+            cameraInputRef.current?.click();
+          } else if (captureMode === 'video') {
+            videoInputRef.current?.click();
+          }
+        }, 500);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [exerciseIdFromUrl]);
+  }, [exerciseIdFromUrl, noteFromUrl, patientExercises, searchParams]);
 
   // Fetch real uploads on mount/user change
   useEffect(() => {
@@ -505,7 +557,7 @@ export default function MediaUpload() {
                 onChange={(e) => {
                   setAssociatedExerciseId(e.target.value);
                   if (!title || title.startsWith('תרגיל: ')) {
-                    const ex = mockExercises.find(x => x.id === e.target.value);
+                    const ex = patientExercises.find(x => x.id === e.target.value);
                     if (ex) {
                       setTitle(`תרגיל: ${ex.nameHe}`);
                     }
@@ -514,7 +566,7 @@ export default function MediaUpload() {
                 style={{ appearance: 'auto' }}
               >
                 <option value="">-- ללא תרגיל (מדיה כללית) --</option>
-                {mockExercises.map(ex => (
+                {patientExercises.map(ex => (
                   <option key={ex.id} value={ex.id}>{ex.nameHe} ({ex.category})</option>
                 ))}
               </select>
@@ -691,7 +743,7 @@ export default function MediaUpload() {
                   <div className="font-semibold text-xs truncate" style={{ color: 'var(--text-primary)' }}>{file.title || file.name}</div>
                   
                   {file.exerciseId && (() => {
-                    const ex = mockExercises.find(e => e.id === file.exerciseId);
+                    const ex = patientExercises.find(e => e.id === file.exerciseId);
                     return ex ? (
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', background: 'rgba(13,148,136,0.1)', color: 'var(--color-teal-light)', fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', marginTop: '4px' }}>
                         👟 {ex.nameHe}
@@ -779,7 +831,7 @@ export default function MediaUpload() {
                         style={{ fontSize: '13px', padding: '4px 8px', width: '100%', appearance: 'auto' }}
                       >
                         <option value="">-- ללא תרגיל --</option>
-                        {mockExercises.map(ex => (
+                        {patientExercises.map(ex => (
                           <option key={ex.id} value={ex.id}>{ex.nameHe}</option>
                         ))}
                       </select>
@@ -809,7 +861,7 @@ export default function MediaUpload() {
                         {new Date(activeMedia.date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                       </span>
                       {activeMedia.exerciseId && (() => {
-                        const ex = mockExercises.find(e => e.id === activeMedia.exerciseId);
+                        const ex = patientExercises.find(e => e.id === activeMedia.exerciseId);
                         return ex ? (
                           <span className="badge badge-teal text-xs" style={{ fontSize: '10px', padding: '2px 6px' }}>
                             👟 {ex.nameHe}
