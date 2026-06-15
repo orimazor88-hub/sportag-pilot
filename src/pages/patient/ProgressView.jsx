@@ -39,7 +39,20 @@ export default function ProgressView() {
     if (isMockMode) {
       const p = mockPatients.find(x => x.id === user.id) || mockPatients[0];
       setPatient(p);
-      setJournalHistory(mockJournalEntries);
+      
+      const updatedHistory = mockJournalEntries.map(j => {
+        const entryDateStr = new Date(j.date).toISOString().slice(0, 10);
+        const savedDone = localStorage.getItem(`sportag_completed_exercises_${user.id}_${entryDateStr}`);
+        let completed = j.exercisesCompleted;
+        if (savedDone) {
+          try {
+            completed = Object.values(JSON.parse(savedDone)).some(Boolean);
+          } catch (e) {}
+        }
+        return { ...j, exercisesCompleted: completed };
+      });
+      
+      setJournalHistory(updatedHistory);
       setLoading(false);
       return;
     }
@@ -65,26 +78,39 @@ export default function ProgressView() {
 
       if (jError) throw jError;
 
-      const formattedJournals = (dbJournals || []).map(j => ({
-        id: j.id,
-        date: j.date,
-        painLevel: j.pain_level,
-        mood: j.mood,
-        energy: j.energy,
-        sleep: j.sleep,
-        activity: j.activity,
-        notes: j.notes,
-        exercisesCompleted: true,
-        walkingScore: j.walking_score,
-        stairsScore: j.stairs_score,
-        runningScore: j.running_score,
-        stepsCount: j.steps_count,
-        distanceKm: j.distance_km,
-        deviceSynced: j.device_synced,
-        deviceType: j.device_type,
-        rom: j.rom,
-        strength: j.strength
-      }));
+      const formattedJournals = (dbJournals || []).map(j => {
+        const entryDateStr = new Date(j.date).toISOString().slice(0, 10);
+        const savedDone = localStorage.getItem(`sportag_completed_exercises_${user.id}_${entryDateStr}`);
+        let completed = false;
+        if (savedDone) {
+          try {
+            completed = Object.values(JSON.parse(savedDone)).some(Boolean);
+          } catch (e) {}
+        } else {
+          completed = j.activity && j.activity !== 'מנוחה';
+        }
+
+        return {
+          id: j.id,
+          date: j.date,
+          painLevel: j.pain_level,
+          mood: j.mood,
+          energy: j.energy,
+          sleep: j.sleep,
+          activity: j.activity,
+          notes: j.notes,
+          exercisesCompleted: completed,
+          walkingScore: j.walking_score,
+          stairsScore: j.stairs_score,
+          runningScore: j.running_score,
+          stepsCount: j.steps_count,
+          distanceKm: j.distance_km,
+          deviceSynced: j.device_synced,
+          deviceType: j.device_type,
+          rom: j.rom,
+          strength: j.strength
+        };
+      });
 
       const formattedPatient = {
         id: profile.id,

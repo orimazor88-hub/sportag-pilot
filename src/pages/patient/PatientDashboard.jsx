@@ -131,6 +131,7 @@ export default function PatientDashboard() {
   const [todayJournal, setTodayJournal] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [completedCount, setCompletedCount] = useState(0);
+  const [completedMap, setCompletedMap] = useState({});
   const [nextSession, setNextSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [therapistNotes, setTherapistNotes] = useState([]);
@@ -146,7 +147,23 @@ export default function PatientDashboard() {
     if (isMockMode) {
       setTodayJournal(mockJournalEntries[0]);
       setExercises(mockExercises.slice(0, 3));
-      setCompletedCount(2);
+      
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const savedDone = localStorage.getItem(`sportag_completed_exercises_${user.id}_${todayStr}`);
+      let doneMap = {};
+      let doneCount = 0;
+      if (savedDone) {
+        try {
+          doneMap = JSON.parse(savedDone);
+          doneCount = Object.values(doneMap).filter(Boolean).length;
+        } catch (e) {}
+      } else {
+        doneMap = { '1': true, '2': true };
+        doneCount = 2;
+      }
+      setCompletedMap(doneMap);
+      setCompletedCount(doneCount);
+
       setNextSession(mockCalendarEvents.find(e => e.patientId === 'p1'));
       
       const mockPatient = {
@@ -224,7 +241,18 @@ export default function PatientDashboard() {
         } else {
           setTodayJournal(null);
         }
-        setCompletedCount(journals.filter(j => j.activity !== 'מנוחה').length);
+
+        const savedDone = localStorage.getItem(`sportag_completed_exercises_${user.id}_${todayStr}`);
+        let doneMap = {};
+        let doneCount = 0;
+        if (savedDone) {
+          try {
+            doneMap = JSON.parse(savedDone);
+            doneCount = Object.values(doneMap).filter(Boolean).length;
+          } catch (e) {}
+        }
+        setCompletedMap(doneMap);
+        setCompletedCount(doneCount);
 
         if (!pError && profile) {
           setProgressToGoal(calculateProgressToGoal(profile, journals));
@@ -427,7 +455,7 @@ export default function PatientDashboard() {
         />
         <StatsCard
           icon={Dumbbell}
-          value={`${todayJournal ? 1 : 0}/${exercises.length}`}
+          value={`${completedCount}/${exercises.length}`}
           label="תרגילים היום"
           color="#10B981"
           onClick={() => navigate('/patient/exercises')}
@@ -508,6 +536,9 @@ export default function PatientDashboard() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <div className="font-semibold text-sm">{ex.nameHe}</div>
+                      {completedMap[ex.id] && (
+                        <span className="badge badge-success text-xxs font-bold" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '1px 4px', borderRadius: '4px', fontSize: '9px' }}>בוצע ✓</span>
+                      )}
                       {isNew && (
                         <span className="badge badge-success text-xs font-bold" style={{ padding: '2px 5px', fontSize: '9px' }}>
                           חדש!
