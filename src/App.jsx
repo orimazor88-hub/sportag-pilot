@@ -19,12 +19,12 @@ import MediaUpload from './pages/patient/MediaUpload';
 import ProgressView from './pages/patient/ProgressView';
 
 import { useState, useEffect } from 'react';
-import { Bell, X, Dumbbell, LogOut } from 'lucide-react';
+import { Bell, X, Dumbbell, LogOut, ArrowLeftRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Protected Layout with Navbar
 function AppLayout() {
-  const { role, logout } = useAuth();
+  const { role, user, logout, switchRole } = useAuth();
   const navigate = useNavigate();
   const [inAppNotification, setInAppNotification] = useState(null);
 
@@ -95,6 +95,28 @@ function AppLayout() {
           <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Physio-AI Pro</span>
         </div>
         <div className="flex items-center gap-2">
+          {user?.canSwitchRole && (
+            <button 
+              className="btn btn-ghost btn-sm" 
+              onClick={() => { 
+                switchRole(); 
+                navigate(role === 'therapist' ? '/patient' : '/therapist'); 
+              }}
+              style={{ 
+                padding: '6px 10px', 
+                fontSize: '11px', 
+                color: 'var(--color-accent-light, #38BDF8)',
+                border: '1px solid var(--color-accent-light, #38BDF8)',
+                background: 'var(--bg-glass)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <ArrowLeftRight size={12} />
+              {role === 'patient' ? 'מבט מטפל' : 'מבט מטופל'}
+            </button>
+          )}
           <button 
             className="btn btn-ghost btn-sm" 
             onClick={handleLogout}
