@@ -1,58 +1,24 @@
-const CACHE_NAME = 'sportag-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
-];
-
+// Self-uninstalling service worker to rescue users trapped in the cache loop
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache);
-    })
-  );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
+        keys.map((key) => caches.delete(key))
       );
+    }).then(() => {
+      return self.clients.claim();
+    }).then(() => {
+      // Unregister this service worker from the client scope
+      return self.registration.unregister();
     })
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only cache GET requests and skip chrome-extension/etc requests
-  if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
-    return;
-  }
-  
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
-        }
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-        return response;
-      }).catch(() => {
-        // Fallback for offline if resources not in cache
-        return caches.match('/index.html');
-      });
-    })
-  );
+  // Directly pass all fetch requests through to the network
+  return;
 });

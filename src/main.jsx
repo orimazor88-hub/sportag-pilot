@@ -10,12 +10,23 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-// Register PWA service worker (only in production to prevent caching local development changes)
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((reg) => console.log('PWA Service Worker registered:', reg.scope))
-      .catch((err) => console.error('Service Worker registration failed:', err));
+// Clean up and unregister any active PWA service workers to resolve cache traps
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (let registration of registrations) {
+      registration.unregister().then((success) => {
+        if (success) {
+          console.log('Service Worker unregistered successfully.');
+          // Clean cache storage as well
+          if (window.caches) {
+            caches.keys().then((keys) => {
+              keys.forEach((key) => caches.delete(key));
+            });
+          }
+        }
+      });
+    }
   });
 }
+
 
