@@ -1,7 +1,7 @@
 // === Daily Journal with Supabase & GPX parser ===
 import { useState, useEffect } from 'react';
 import { PainScale, BodyMap, PAIN_LOCATION_MAP } from '../../components/SharedComponents';
-import { mockJournalEntries } from '../../data/mockData';
+import { mockJournalEntries, mockPatients } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
@@ -114,10 +114,27 @@ export default function DailyJournal() {
     }
   };
 
-  // Load past journals
+  const [exercisesList, setExercisesList] = useState([]);
+
+  // Load past journals & exercises
   useEffect(() => {
     loadJournals();
-  }, [user]);
+    
+    if (user) {
+      if (!isMockMode) {
+        supabase
+          .from('exercises')
+          .select('id, name_he, name')
+          .eq('patient_id', user.id)
+          .then(({ data }) => {
+            if (data) setExercisesList(data);
+          });
+      } else {
+        const foundPatient = mockPatients.find(p => p.id === user.id);
+        setExercisesList(foundPatient?.exercises || []);
+      }
+    }
+  }, [user, isMockMode]);
 
   const loadJournals = async () => {
     if (!user) return;
@@ -222,6 +239,39 @@ export default function DailyJournal() {
   };
 
   const handleSave = async () => {
+    // Sync exercise notes and checklist from localStorage to database notes
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const savedCompleted = localStorage.getItem(`sportag_completed_exercises_${user.id}_${todayStr}`);
+    const savedNotes = localStorage.getItem(`sportag_exercise_notes_${user.id}_${todayStr}`);
+    
+    let combinedNotes = notes;
+    if (savedNotes || savedCompleted) {
+      try {
+        const parsedNotes = savedNotes ? JSON.parse(savedNotes) : {};
+        const parsedCompleted = savedCompleted ? JSON.parse(savedCompleted) : {};
+        
+        const exerciseLines = [];
+        const allKeys = new Set([...Object.keys(parsedNotes), ...Object.keys(parsedCompleted)]);
+        
+        allKeys.forEach(exId => {
+          const exObj = exercisesList.find(e => e.id === exId || e.id.toString() === exId.toString());
+          const exName = exObj ? exObj.nameHe || exObj.name_he || exObj.name : `תרגיל ${exId}`;
+          const isDone = parsedCompleted[exId] === true;
+          const exNote = parsedNotes[exId];
+          
+          if (isDone || exNote) {
+            exerciseLines.push(`• ${exName}: ${isDone ? 'בוצע' : 'לא בוצע'}${exNote ? ` (הערה: ${exNote})` : ''}`);
+          }
+        });
+        
+        if (exerciseLines.length > 0) {
+          combinedNotes += (combinedNotes ? '\n\n' : '') + '[מעקב תרגילים יומי]:\n' + exerciseLines.join('\n');
+        }
+      } catch (e) {
+        console.error("Error formatting exercise notes for journal", e);
+      }
+    }
+
     const journalData = {
       date: new Date().toISOString().slice(0, 10),
       pain_level: Number(painLevel),
@@ -229,7 +279,7 @@ export default function DailyJournal() {
       energy: Number(energy),
       sleep: Number(sleep),
       activity: activity || (deviceSynced ? (deviceType === 'garmin' ? 'ריצה מסונכרנת משעון גרמין' : 'פעילות מסונכרנת מ-Apple Health') : 'מנוחה'),
-      notes,
+      notes: combinedNotes,
       pain_location: selectedArea,
       ...(isLowerLimb ? {
         walking_score: Number(walking),
@@ -242,7 +292,6 @@ export default function DailyJournal() {
       device_type: deviceType
     };
 
-    const todayStr = new Date().toISOString().slice(0, 10);
     if (isMockMode) {
       const existingIdx = mockJournalEntries.findIndex(e => e.date === todayStr && e.patientId === user.id);
       if (existingIdx !== -1) {

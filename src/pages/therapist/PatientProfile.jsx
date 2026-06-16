@@ -592,27 +592,43 @@ export default function PatientProfile() {
         .eq('patient_id', id)
         .order('date', { ascending: false });
 
-      const formattedJournals = (dbJournals || []).map(j => ({
-        id: j.id,
-        date: j.date,
-        painLevel: j.pain_level,
-        mood: j.mood,
-        energy: j.energy,
-        sleep: j.sleep,
-        activity: j.activity,
-        notes: j.notes,
-        exercisesCompleted: true,
-        walkingScore: j.walking_score,
-        stairsScore: j.stairs_score,
-        runningScore: j.running_score,
-        stepsCount: j.steps_count,
-        distanceKm: j.distance_km,
-        deviceSynced: j.device_synced,
-        deviceType: j.device_type,
-        rom: j.rom,
-        strength: j.strength,
-        painLocation: j.pain_location || j.painLocation
-      }));
+      const formattedJournals = (dbJournals || []).map(j => {
+        const entryDateStr = j.date ? new Date(j.date).toISOString().slice(0, 10) : '';
+        
+        // Local storage fallback for pilot testing on the same device
+        const localCompleted = localStorage.getItem(`sportag_completed_exercises_${id}_${entryDateStr}`);
+        const localNotes = localStorage.getItem(`sportag_exercise_notes_${id}_${entryDateStr}`);
+        
+        let hasCompleted = j.notes && (j.notes.includes('[מעקב תרגילים יומי]') || j.notes.includes('בוצע'));
+        try {
+          if (localCompleted) {
+            const parsed = JSON.parse(localCompleted);
+            hasCompleted = Object.values(parsed).some(v => v === true);
+          }
+        } catch(e){}
+
+        return {
+          id: j.id,
+          date: j.date,
+          painLevel: j.pain_level,
+          mood: j.mood,
+          energy: j.energy,
+          sleep: j.sleep,
+          activity: j.activity,
+          notes: j.notes,
+          exercisesCompleted: hasCompleted,
+          walkingScore: j.walking_score,
+          stairsScore: j.stairs_score,
+          runningScore: j.running_score,
+          stepsCount: j.steps_count,
+          distanceKm: j.distance_km,
+          deviceSynced: j.device_synced,
+          deviceType: j.device_type,
+          rom: j.rom,
+          strength: j.strength,
+          painLocation: j.pain_location || j.painLocation
+        };
+      });
 
       // 5. Fetch Media Uploads
       const { data: dbMedia, error: mError } = await supabase
@@ -1232,7 +1248,7 @@ export default function PatientProfile() {
           )}
 
           {/* Garmin / Wearable Sync Card */}
-          {patient.id === 'p1' && avgSteps > 0 && (
+          {avgSteps > 0 && (
             <div className="card mb-4 animate-fade-in-up stagger-2" style={{ border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.03)' }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="section-title mb-0 flex items-center gap-2" style={{ color: '#F59E0B' }}>
@@ -1392,9 +1408,47 @@ export default function PatientProfile() {
           </div>
           {exercises.length > 0 ? (
             <div className="flex flex-col gap-3">
-              {exercises.map(ex => (
-                <ExerciseCard key={ex.id} exercise={ex} />
-              ))}
+              {exercises.map(ex => {
+                // Read from localStorage to check if completed today or has notes (fallback for single-device testing)
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const completedData = localStorage.getItem(`sportag_completed_exercises_${id}_${todayStr}`);
+                const notesData = localStorage.getItem(`sportag_exercise_notes_${id}_${todayStr}`);
+                
+                let isCompleted = false;
+                let note = '';
+                try {
+                  if (completedData) isCompleted = JSON.parse(completedData)[ex.id] === true;
+                  if (notesData) note = JSON.parse(notesData)[ex.id] || '';
+                } catch(e){}
+
+                return (
+                  <div key={ex.id} className="relative flex flex-col gap-2">
+                    <ExerciseCard 
+                      exercise={ex} 
+                      completed={isCompleted} 
+                    />
+                    {note && (
+                      <div 
+                        className="text-xs p-3 rounded-xl animate-fade-in" 
+                        style={{ 
+                          background: 'rgba(16, 185, 129, 0.08)', 
+                          border: '1px solid rgba(16, 185, 129, 0.2)', 
+                          color: 'var(--text-primary)',
+                          marginTop: '-6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span>📝</span>
+                        <div>
+                          <strong>הערת מטופל מהיום:</strong> {note}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="empty-state">

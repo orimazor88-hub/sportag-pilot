@@ -95,18 +95,29 @@ export default function TherapistDashboard() {
           value={patients.length}
           label="מטופלים פעילים"
           color="#266289"
+          onClick={() => navigate('/therapist/patients')}
         />
         <StatsCard
           icon={CalendarDays}
           value={todayEvents.length}
           label="טיפולים היום"
           color="#0891B2"
+          onClick={() => navigate('/therapist/calendar')}
         />
         <StatsCard
           icon={AlertCircle}
           value={2}
           label="דורשים תשומת לב"
           color="#E22279"
+          onClick={() => {
+            const el = document.getElementById('pending-reminders-section');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth' });
+            } else {
+              const patEl = document.getElementById('patients-section');
+              if (patEl) patEl.scrollIntoView({ behavior: 'smooth' });
+            }
+          }}
         />
         <StatsCard
           icon={TrendingUp}
@@ -114,6 +125,10 @@ export default function TherapistDashboard() {
           label="ממוצע התקדמות"
           color="#10B981"
           trend={12}
+          onClick={() => {
+            const el = document.getElementById('patients-section');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+          }}
         />
       </div>
 
@@ -153,7 +168,7 @@ export default function TherapistDashboard() {
 
       {/* Reminders & Alerts */}
       {pendingReminders.length > 0 && (
-        <div className="dashboard-section animate-fade-in-up stagger-3">
+        <div id="pending-reminders-section" className="dashboard-section animate-fade-in-up stagger-3">
           <h2 className="section-title">
             <Bell size={20} style={{ display: 'inline', verticalAlign: 'middle', marginLeft: 8 }} />
             תזכורות ממתינות
@@ -176,7 +191,7 @@ export default function TherapistDashboard() {
       )}
 
       {/* Patients */}
-      <div className="dashboard-section animate-fade-in-up stagger-4">
+      <div id="patients-section" className="dashboard-section animate-fade-in-up stagger-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="section-title" style={{ marginBottom: 0 }}>מטופלים</h2>
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/therapist/patients')}>
