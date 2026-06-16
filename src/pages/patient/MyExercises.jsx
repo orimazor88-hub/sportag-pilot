@@ -1,7 +1,7 @@
 // === My Exercises ===
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockExercises } from '../../data/mockData';
+import { mockExercises, mockJournalEntries } from '../../data/mockData';
 import { ExerciseCard } from '../../components/SharedComponents';
 import { CheckCircle, Trophy, Save } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
@@ -125,21 +125,111 @@ export default function MyExercises() {
     setExerciseNotes(prev => ({ ...prev, [exerciseId]: newNote }));
   };
 
+  const syncExerciseLogsToDatabase = async (updatedCompleted, updatedNotes) => {
+    if (!user) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    
+    // Build formatted lines
+    const exerciseLines = [];
+    const allKeys = new Set([...Object.keys(updatedCompleted), ...Object.keys(updatedNotes)]);
+    
+    allKeys.forEach(exId => {
+      const exObj = exercises.find(e => e.id === exId || e.id.toString() === exId.toString());
+      const exName = exObj ? exObj.nameHe || exObj.name_he || exObj.name : `תרגיל ${exId}`;
+      const isDone = updatedCompleted[exId] === true;
+      const exNote = updatedNotes[exId];
+      if (isDone || exNote) {
+        exerciseLines.push(`• ${exName}: ${isDone ? 'בוצע' : 'לא בוצע'}${exNote ? ` (הערה: ${exNote})` : ''}`);
+      }
+    });
+    
+    const exerciseLogsBlock = exerciseLines.length > 0
+      ? `[מעקב תרגילים יומי]:\n${exerciseLines.join('\n')}`
+      : '';
+
+    if (isMockMode) {
+      const existingIdx = mockJournalEntries.findIndex(e => e.date === todayStr && e.patientId === user.id);
+      if (existingIdx !== -1) {
+        let cleanNotes = mockJournalEntries[existingIdx].notes || '';
+        const marker = '[מעקב תרגילים יומי]:';
+        const markerIdx = cleanNotes.indexOf(marker);
+        if (markerIdx !== -1) cleanNotes = cleanNotes.substring(0, markerIdx).trim();
+        
+        mockJournalEntries[existingIdx].notes = cleanNotes + (exerciseLogsBlock ? (cleanNotes ? '\n\n' : '') + exerciseLogsBlock : '');
+      } else {
+        mockJournalEntries.unshift({
+          id: Date.now().toString(),
+          patientId: user.id,
+          date: todayStr,
+          painLevel: 4,
+          mood: 'טוב',
+          energy: 7,
+          sleep: 7,
+          activity: 'תרגול ביתי',
+          notes: exerciseLogsBlock,
+          painLocation: 'knee-r'
+        });
+      }
+      return;
+    }
+
+    try {
+      const { data: existing, error: fetchErr } = await supabase
+        .from('journals')
+        .select('*')
+        .eq('patient_id', user.id)
+        .eq('date', todayStr)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+
+      if (existing) {
+        let cleanNotes = existing.notes || '';
+        const marker = '[מעקב תרגילים יומי]:';
+        const markerIdx = cleanNotes.indexOf(marker);
+        if (markerIdx !== -1) cleanNotes = cleanNotes.substring(0, markerIdx).trim();
+        
+        const finalNotes = cleanNotes + (exerciseLogsBlock ? (cleanNotes ? '\n\n' : '') + exerciseLogsBlock : '');
+        
+        await supabase
+          .from('journals')
+          .update({ notes: finalNotes })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('journals')
+          .insert([{
+            patient_id: user.id,
+            date: todayStr,
+            pain_level: 4,
+            mood: 'טוב',
+            energy: 7,
+            sleep: 7,
+            activity: 'תרגול ביתי',
+            notes: exerciseLogsBlock,
+            pain_location: 'knee-r'
+          }]);
+      }
+    } catch (err) {
+      console.error('Error syncing exercise logs to database:', err);
+    }
+  };
+
   const handleSaveSingle = (exerciseId, isDone, noteText) => {
     if (!user) return;
     const todayStr = new Date().toISOString().slice(0, 10);
     
-    setCompletedExercises(prev => {
-      const updatedCompleted = { ...prev, [exerciseId]: isDone };
-      localStorage.setItem(`sportag_completed_exercises_${user.id}_${todayStr}`, JSON.stringify(updatedCompleted));
-      return updatedCompleted;
-    });
+    const updatedCompleted = { ...completedExercises, [exerciseId]: isDone };
+    const updatedNotes = { ...exerciseNotes, [exerciseId]: noteText || '' };
 
-    setExerciseNotes(prev => {
-      const updatedNotes = { ...prev, [exerciseId]: noteText || '' };
-      localStorage.setItem(`sportag_exercise_notes_${user.id}_${todayStr}`, JSON.stringify(updatedNotes));
-      return updatedNotes;
-    });
+    setCompletedExercises(updatedCompleted);
+    localStorage.setItem(`sportag_completed_exercises_${user.id}_${todayStr}`, JSON.stringify(updatedCompleted));
+
+    setExerciseNotes(updatedNotes);
+    localStorage.setItem(`sportag_exercise_notes_${user.id}_${todayStr}`, JSON.stringify(updatedNotes));
+
+    // Sync to Supabase/Mock database
+    syncExerciseLogsToDatabase(updatedCompleted, updatedNotes);
 
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -150,6 +240,10 @@ export default function MyExercises() {
     const todayStr = new Date().toISOString().slice(0, 10);
     localStorage.setItem(`sportag_completed_exercises_${user.id}_${todayStr}`, JSON.stringify(completedExercises));
     localStorage.setItem(`sportag_exercise_notes_${user.id}_${todayStr}`, JSON.stringify(exerciseNotes));
+    
+    // Sync to Supabase/Mock database
+    syncExerciseLogsToDatabase(completedExercises, exerciseNotes);
+
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };

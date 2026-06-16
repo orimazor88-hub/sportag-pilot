@@ -897,6 +897,54 @@ export default function PatientProfile() {
   const avgDistance = syncedEntries.length ? (syncedEntries.reduce((acc, e) => acc + (e.distanceKm || 0), 0) / syncedEntries.length).toFixed(1) : 0;
   const deviceType = syncedEntries.find(e => e.deviceType)?.deviceType === 'garmin' ? 'Garmin Fenix 7' : 'Apple Watch / iPhone';
 
+  // Helper to parse exercise checklist and notes from the journal notes text
+  const parseExerciseLogsFromNotes = (notesText) => {
+    const logs = { completed: {}, notes: {} };
+    if (!notesText) return logs;
+    
+    const marker = '[מעקב תרגילים יומי]:';
+    const markerIdx = notesText.indexOf(marker);
+    if (markerIdx === -1) return logs;
+    
+    const logsPart = notesText.substring(markerIdx + marker.length).trim();
+    const lines = logsPart.split('\n');
+    
+    lines.forEach(line => {
+      if (line.startsWith('•')) {
+        const cleanLine = line.substring(1).trim();
+        
+        let noteContent = '';
+        const noteMatch = cleanLine.match(/\(הערה:\s*(.*?)\)/);
+        if (noteMatch) {
+          noteContent = noteMatch[1].trim();
+        }
+        
+        const statusIdx = cleanLine.indexOf(':');
+        if (statusIdx !== -1) {
+          const namePart = cleanLine.substring(0, statusIdx).trim();
+          const restPart = cleanLine.substring(statusIdx + 1).trim();
+          const isCompleted = restPart.includes('בוצע') && !restPart.includes('לא בוצע');
+          
+          const matchedEx = exercises.find(e => 
+            e.nameHe === namePart || e.name_he === namePart || e.name === namePart
+          );
+          
+          if (matchedEx) {
+            logs.completed[matchedEx.id] = isCompleted;
+            if (noteContent) {
+              logs.notes[matchedEx.id] = noteContent;
+            }
+          }
+        }
+      }
+    });
+    return logs;
+  };
+
+  const dbTodayStr = new Date().toISOString().slice(0, 10);
+  const todayJournal = journalHistory.find(j => j.date && j.date.slice(0, 10) === dbTodayStr);
+  const dbLogs = todayJournal ? parseExerciseLogsFromNotes(todayJournal.notes) : { completed: {}, notes: {} };
+
   const tabs = [
     { id: 'overview', label: 'סקירה', icon: Activity },
     { id: 'sessions', label: 'טיפולים', icon: FileText },
@@ -1414,11 +1462,17 @@ export default function PatientProfile() {
                 const completedData = localStorage.getItem(`sportag_completed_exercises_${id}_${todayStr}`);
                 const notesData = localStorage.getItem(`sportag_exercise_notes_${id}_${todayStr}`);
                 
-                let isCompleted = false;
-                let note = '';
+                let isCompleted = dbLogs.completed[ex.id] || false;
+                let note = dbLogs.notes[ex.id] || '';
                 try {
-                  if (completedData) isCompleted = JSON.parse(completedData)[ex.id] === true;
-                  if (notesData) note = JSON.parse(notesData)[ex.id] || '';
+                  if (completedData) {
+                    const localCompleted = JSON.parse(completedData)[ex.id];
+                    if (localCompleted !== undefined) isCompleted = localCompleted === true;
+                  }
+                  if (notesData) {
+                    const localNote = JSON.parse(notesData)[ex.id];
+                    if (localNote) note = localNote;
+                  }
                 } catch(e){}
 
                 return (
