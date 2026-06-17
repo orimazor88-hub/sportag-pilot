@@ -581,6 +581,7 @@ export default function PatientProfile() {
 
       const formattedExercises = (dbExercises || []).map(e => ({
         id: e.id,
+        patientId: e.patient_id,
         name: e.name,
         nameHe: e.name_he,
         category: e.category,
