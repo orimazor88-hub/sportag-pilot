@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS public.media_uploads (
 ALTER TABLE public.media_uploads ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "media_patient_all" ON public.media_uploads FOR ALL USING (auth.uid() = patient_id);
-CREATE POLICY "media_therapist_select" ON public.media_uploads FOR SELECT USING (
+CREATE POLICY "media_therapist_all" ON public.media_uploads FOR ALL USING (
   EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'therapist')
 );
 

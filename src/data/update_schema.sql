@@ -139,3 +139,15 @@ CREATE POLICY "Therapists can manage therapist notes"
     )
   );
 
+-- 8. Enable therapists to manage media uploads (upload clinic visit videos)
+DROP POLICY IF EXISTS "media_therapist_select" ON public.media_uploads;
+DROP POLICY IF EXISTS "media_therapist_all" ON public.media_uploads;
+
+CREATE POLICY "media_therapist_all" ON public.media_uploads FOR ALL USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE public.profiles.id = auth.uid() AND public.profiles.role = 'therapist'
+  )
+);
+
+
