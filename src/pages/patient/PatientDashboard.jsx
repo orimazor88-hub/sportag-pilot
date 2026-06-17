@@ -164,7 +164,7 @@ export default function PatientDashboard() {
       setCompletedMap(doneMap);
       setCompletedCount(doneCount);
 
-      setNextSession(mockCalendarEvents.find(e => e.patientId === 'p1'));
+      setNextSession(mockCalendarEvents.find(e => e.patientId === user.id));
       
       const mockPatient = {
         is_lower_limb: true,
@@ -179,7 +179,7 @@ export default function PatientDashboard() {
       };
       setProgressToGoal(calculateProgressToGoal(mockPatient, mockJournalEntries));
       
-      const savedNotes = localStorage.getItem('mock_therapist_notes_p1');
+      const savedNotes = localStorage.getItem(`mock_therapist_notes_${user.id}`);
       if (savedNotes) {
         setTherapistNotes(JSON.parse(savedNotes));
       } else {
@@ -188,19 +188,19 @@ export default function PatientDashboard() {
             id: 'note-1',
             date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
             notes: 'פגישת הערכה ראשונית. המטופל מדווח על כאב ממוקד בגיד הפיקה ברגל ימין במהלך ואחרי ריצה. טווחי תנועה מלאים, כוח שריר 4/5.',
-            patient_id: 'p1',
+            patient_id: user.id,
             created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
           },
           {
             id: 'note-2',
             date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
             notes: 'דיווח על שיפור קל לאחר ביצוע תרגילי חיזוק איזומטריים לברך. כאב ירד לדרגה 3 במהלך הליכה.',
-            patient_id: 'p1',
+            patient_id: user.id,
             created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
           }
         ];
         setTherapistNotes(defaultNotes);
-        localStorage.setItem('mock_therapist_notes_p1', JSON.stringify(defaultNotes));
+        localStorage.setItem(`mock_therapist_notes_${user.id}`, JSON.stringify(defaultNotes));
       }
 
       setLoading(false);
@@ -279,7 +279,9 @@ export default function PatientDashboard() {
           holdTime: e.hold_time,
           frequency: e.frequency,
           difficulty: e.difficulty,
-          assignedDate: e.assigned_date
+          assignedDate: e.assigned_date,
+          videoUrl: e.video_url,
+          therapistNote: e.therapist_note
         })));
       }
 
@@ -548,6 +550,12 @@ export default function PatientDashboard() {
                     <div className="text-xs text-muted">
                       {ex.sets} סטים × {ex.reps} חזרות {ex.assignedDate && `• שויך ב-${new Date(ex.assignedDate).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}`}
                     </div>
+                    {ex.therapistNote && (
+                      <div className="text-xxs font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--color-primary-light)', direction: 'rtl' }}>
+                        <span>👨‍⚕️ הנחיית מטפל:</span>
+                        <span className="truncate max-w-[280px]" style={{ display: 'inline-block' }}>{ex.therapistNote}</span>
+                      </div>
+                    )}
                   </div>
                   <span className="badge badge-teal">{ex.frequency}</span>
                 </div>
