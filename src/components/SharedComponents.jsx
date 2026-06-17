@@ -756,28 +756,6 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
             <CheckCircle size={18} />
             {isDone ? 'בוצע! ✓' : 'סמן כבוצע'}
           </button>
-
-          {latestClinicVideo && (
-            <button
-              className="btn flex-1"
-              onClick={() => setActiveMedia(latestClinicVideo)}
-              style={{
-                padding: 'var(--space-3) var(--space-4)',
-                fontSize: 'var(--font-size-sm)',
-                background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-teal) 100%)',
-                color: 'white',
-                border: 'none',
-                boxShadow: 'var(--shadow-sm)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px'
-              }}
-            >
-              <Play size={16} />
-              הפעל סרטון תרגול
-            </button>
-          )}
         </div>
       )}
 
