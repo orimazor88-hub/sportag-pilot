@@ -492,6 +492,16 @@ export default function PatientProfile() {
     loadPatientData();
   }, [id, isMockMode, uploads]);
 
+  useEffect(() => {
+    const handleUploadRefresh = () => {
+      loadPatientData();
+    };
+    window.addEventListener('sportag-media-uploaded', handleUploadRefresh);
+    return () => {
+      window.removeEventListener('sportag-media-uploaded', handleUploadRefresh);
+    };
+  }, [id]);
+
   const loadPatientData = async () => {
     if (isMockMode) {
       const p = mockPatients.find(x => x.id === id);
@@ -646,7 +656,8 @@ export default function PatientProfile() {
         date: item.date,
         note: item.note,
         persistedUrl: item.file_url,
-        thumbnailUrl: item.thumbnail_url
+        thumbnailUrl: item.thumbnail_url,
+        uploadedBy: item.title && item.title.includes('הנחיית מטפל') ? 'therapist' : 'patient'
       }));
 
       // 6. Fetch Therapist Notes
@@ -1480,6 +1491,7 @@ export default function PatientProfile() {
                     <ExerciseCard 
                       exercise={ex} 
                       completed={isCompleted} 
+                      customUploads={patientMedia}
                     />
                     {note && (
                       <div 

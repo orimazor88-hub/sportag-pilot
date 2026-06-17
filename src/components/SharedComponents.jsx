@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../services/supabaseClient';
 import {
   Shield, Mic, X, CheckCircle, AlertTriangle,
   ChevronLeft, ChevronRight, Search, Play, Camera, Video, Save
@@ -142,12 +143,13 @@ export function PatientCard({ patient, onClick, compact = false }) {
 
 // --- Exercise Card ---
 export function ExerciseCard({ exercise, onComplete, completed = false, customUploads, exerciseNote, onNoteChange, onSave }) {
-  const { uploads: contextUploads, setUploads } = useAuth();
+  const { uploads: contextUploads, setUploads, isMockMode } = useAuth();
   const uploads = customUploads || contextUploads || [];
   const [isDone, setIsDone] = useState(completed);
   const [activeMedia, setActiveMedia] = useState(null);
   const [showTherapistUpload, setShowTherapistUpload] = useState(false);
   const [therapistNote, setTherapistNote] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   
   const therapistFileInputRef = useRef(null);
 
@@ -166,32 +168,93 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
   const location = useLocation();
   const isPatient = location.pathname.startsWith('/patient');
 
-  const handleTherapistUpload = (e) => {
+  const handleTherapistUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Temporary blob URL for instant preview in current session
-    const previewUrl = URL.createObjectURL(file);
-    
-    // Fallback URL for persistence
-    const persistedUrl = 'https://www.w3schools.com/html/mov_bbb.mp4';
+    setIsUploading(true);
 
-    const newUpload = {
-      id: Date.now(),
-      type: 'video',
-      name: file.name || 'visit_video.mp4',
-      title: `הדגמת ביקור - ${exercise.nameHe}`,
-      exerciseId: exercise.id,
-      uploadedBy: 'therapist',
-      date: new Date().toISOString().split('T')[0],
-      note: therapistNote.trim() || 'הנחיות ביצוע שנקבעו בקליניקה',
-      previewUrl,
-      persistedUrl,
-    };
+    const todayStr = new Date().toISOString().split('T')[0];
+    const noteText = therapistNote.trim() || 'הנחיות ביצוע שנקבעו בקליניקה';
+    const uploadTitle = `הנחיית מטפל - ${exercise.nameHe || exercise.name_he || exercise.name}`;
 
-    setUploads(prev => [newUpload, ...prev]);
-    setShowTherapistUpload(false);
-    setTherapistNote('');
+    if (isMockMode) {
+      const previewUrl = URL.createObjectURL(file);
+      const newUpload = {
+        id: Date.now(),
+        type: 'video',
+        name: file.name || 'visit_video.mp4',
+        title: uploadTitle,
+        exerciseId: exercise.id,
+        uploadedBy: 'therapist',
+        date: todayStr,
+        note: noteText,
+        previewUrl,
+        persistedUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
+      };
+      setUploads(prev => [newUpload, ...prev]);
+      setShowTherapistUpload(false);
+      setTherapistNote('');
+      setIsUploading(false);
+      return;
+    }
+
+    try {
+      const fileExt = file.name.split('.').pop() || 'mp4';
+      const randomStr = Math.random().toString(36).substring(7);
+      const storageFileName = `${exercise.patientId}/${Date.now()}_${randomStr}.${fileExt}`;
+      const storagePath = `uploads/${storageFileName}`;
+
+      const { data, error: uploadErr } = await supabase.storage
+        .from('patient-media')
+        .upload(storagePath, file);
+
+      if (uploadErr) throw uploadErr;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('patient-media')
+        .getPublicUrl(storagePath);
+
+      const { error: dbError } = await supabase
+        .from('media_uploads')
+        .insert([{
+          patient_id: exercise.patientId,
+          title: uploadTitle,
+          type: 'video',
+          file_name: file.name,
+          file_url: publicUrl,
+          note: noteText,
+          exercise_id: exercise.id.toString(),
+          date: todayStr
+        }]);
+
+      if (dbError) throw dbError;
+
+      const newUpload = {
+        id: Date.now().toString(),
+        type: 'video',
+        name: file.name,
+        title: uploadTitle,
+        exerciseId: exercise.id,
+        uploadedBy: 'therapist',
+        date: todayStr,
+        note: noteText,
+        persistedUrl: publicUrl,
+      };
+      setUploads(prev => [newUpload, ...prev]);
+      
+      // Dispatch refresh event to update parent state
+      window.dispatchEvent(new CustomEvent('sportag-media-uploaded'));
+
+      setShowTherapistUpload(false);
+      setTherapistNote('');
+      alert('הסרטון הועלה בהצלחה ונשמר עבור המטופל!');
+    } catch (err) {
+      console.error('Therapist upload failed:', err);
+      alert('שגיאה בהעלאת סרטון המטפל: ' + err.message);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const exerciseUploads = (uploads || []).filter(item => item.exerciseId === exercise.id);
@@ -324,7 +387,7 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
       {patientVideos.length > 0 && (
         <div className="mt-3 flex flex-col gap-2">
           <div className="text-xs font-bold text-secondary">
-            💪 ביצועים שלי שהעליתי:
+            {isPatient ? '💪 ביצועים שלי שהעליתי:' : '💪 סרטוני ביצוע של המטופל:'}
           </div>
           {patientVideos.map((video) => (
             <div 
@@ -366,49 +429,51 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
 
       {/* Upload button for therapist */}
       {!isPatient && (
-        <div className="mt-3">
-          {showTherapistUpload ? (
-            <div className="card" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', padding: 'var(--space-3)' }}>
-              <div className="input-group mb-3">
-                <label className="input-label text-xs font-bold mb-1">הנחיות ודגשים למטופל (יופיעו לצד הוידאו בבית):</label>
-                <input 
-                  type="text"
-                  className="input input-sm text-xs"
-                  value={therapistNote}
-                  onChange={(e) => setTherapistNote(e.target.value)}
-                  placeholder="למשל: לרדת לאט, לשמור על יציבה ישרה..."
-                />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <button type="button" className="btn btn-xs btn-ghost" onClick={() => setShowTherapistUpload(false)}>
-                  ביטול
-                </button>
-                <button 
-                  type="button" 
-                  className="btn btn-xs btn-primary"
-                  onClick={() => therapistFileInputRef.current?.click()}
-                  disabled={!therapistNote.trim()}
-                >
-                  בחר/צלם וידאו והעלה
-                </button>
-              </div>
+        <div className="mt-3 flex flex-col gap-3">
+          {/* Note Input */}
+          <div style={{ direction: 'rtl' }} className="flex flex-col gap-1">
+            <label className="text-xxs font-bold text-secondary block" style={{ color: 'var(--text-secondary)' }}>הנחיות ודגשים למטופל (יופיעו לצד הוידאו בבית):</label>
+            <input 
+              type="text"
+              className="input input-sm text-xs"
+              value={therapistNote}
+              onChange={(e) => setTherapistNote(e.target.value)}
+              placeholder="דגשים לביצוע, מספר חזרות מומלץ, קצב..."
+              disabled={isUploading}
+              style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', height: '36px' }}
+            />
+          </div>
+
+          {/* Camera Buttons Section */}
+          <div style={{ direction: 'rtl' }}>
+            <label className="text-xxs font-bold text-secondary mb-1 block" style={{ color: 'var(--text-secondary)' }}>צילום והעלאת סרטון הדגמה לשימוש המטופל בבית:</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn flex-1 animate-pulse-subtle"
+                onClick={() => therapistFileInputRef.current?.click()}
+                disabled={isUploading}
+                style={{
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                  color: 'white',
+                  padding: 'var(--space-3) var(--space-2)',
+                  fontSize: 'var(--font-size-xs)',
+                  fontWeight: 'bold',
+                  borderRadius: 'var(--radius-lg)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  border: 'none',
+                  boxShadow: 'var(--shadow-md)',
+                  cursor: 'pointer'
+                }}
+              >
+                <Video size={15} />
+                {isUploading ? 'מעלה וידאו...' : '🎥 צלם/העלה וידאו'}
+              </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-ghost w-full"
-              onClick={() => setShowTherapistUpload(true)}
-              style={{
-                border: '1px dashed var(--border-color)',
-                color: 'var(--color-primary-light)',
-                padding: 'var(--space-2) var(--space-3)',
-                fontSize: 'var(--font-size-xs)'
-              }}
-            >
-              <Camera size={14} />
-              ➕ צלם/העלה וידאו ביקור מהקליניקה
-            </button>
-          )}
+          </div>
         </div>
       )}
 

@@ -81,7 +81,7 @@ export default function MyExercises() {
         note: item.note,
         persistedUrl: item.file_url,
         thumbnailUrl: item.thumbnail_url,
-        uploadedBy: 'patient'
+        uploadedBy: item.title && item.title.includes('הנחיית מטפל') ? 'therapist' : 'patient'
       })));
     } catch (err) {
       console.error('Error loading exercises:', err);

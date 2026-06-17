@@ -156,7 +156,6 @@ export default function MediaUpload() {
 
       if (error) throw error;
       
-      // Adapt DB structures to UI representation
       const formatted = (data || []).map(item => ({
         id: item.id,
         type: item.type,
@@ -166,7 +165,8 @@ export default function MediaUpload() {
         date: item.date,
         note: item.note,
         persistedUrl: item.file_url,
-        thumbnailUrl: item.thumbnail_url
+        thumbnailUrl: item.thumbnail_url,
+        uploadedBy: item.title && item.title.includes('הנחיית מטפל') ? 'therapist' : 'patient'
       }));
 
       setRealUploads(formatted);
