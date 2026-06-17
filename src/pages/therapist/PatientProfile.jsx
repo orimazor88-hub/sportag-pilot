@@ -488,6 +488,28 @@ export default function PatientProfile() {
     }
   };
 
+  const handleDeleteMedia = async (mediaId) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק קובץ זה?')) return;
+
+    try {
+      if (isMockMode) {
+        alert('הקובץ נמחק בהצלחה (מצב הדגמה)!');
+      } else {
+        const { error } = await supabase
+          .from('media_uploads')
+          .delete()
+          .eq('id', mediaId);
+
+        if (error) throw error;
+        alert('הקובץ נמחק בהצלחה!');
+      }
+      await loadPatientData();
+    } catch (err) {
+      console.error('Error deleting media:', err);
+      alert('שגיאה במחיקת הקובץ: ' + err.message);
+    }
+  };
+
   useEffect(() => {
     loadPatientData();
   }, [id, isMockMode, uploads]);
@@ -1590,6 +1612,35 @@ export default function PatientProfile() {
                   {/* Thumbnail Box */}
                   <div style={{ width: '100%', height: '120px', overflow: 'hidden', position: 'relative', background: 'var(--bg-tertiary)' }}>
                     {renderThumbnail(file)}
+                    
+                    {/* Delete button for therapist */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteMedia(file.id);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        top: 'var(--space-2)',
+                        right: 'var(--space-2)',
+                        width: 28,
+                        height: 28,
+                        background: 'rgba(239, 68, 68, 0.95)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: 'var(--shadow-sm)',
+                        zIndex: 2,
+                        cursor: 'pointer'
+                      }}
+                      title="מחק קובץ"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                     
                     {/* Type Badge */}
                     <span className="badge" style={{

@@ -196,6 +196,48 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
     onSave?.(nextCompletedVal, exerciseNote);
   };
 
+  const handleDeleteVideo = async (video, e) => {
+    e.stopPropagation();
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק סרטון זה?')) return;
+
+    try {
+      if (isMockMode) {
+        setUploads(prev => prev.filter(item => item.id !== video.id));
+        alert('הסרטון נמחק בהצלחה (מצב הדגמה)!');
+      } else {
+        const { error } = await supabase
+          .from('media_uploads')
+          .delete()
+          .eq('id', video.id);
+
+        if (error) throw error;
+        
+        // Try to delete from storage as well
+        if (video.persistedUrl) {
+          try {
+            const urlParts = video.persistedUrl.split('/patient-media/');
+            if (urlParts.length === 2) {
+              const storagePath = urlParts[1];
+              await supabase.storage
+                .from('patient-media')
+                .remove([storagePath]);
+            }
+          } catch (storageErr) {
+            console.warn('Storage deletion failed:', storageErr);
+          }
+        }
+        
+        alert('הסרטון נמחק בהצלחה!');
+      }
+
+      // Trigger re-fetch on parent views
+      window.dispatchEvent(new CustomEvent('sportag-media-uploaded'));
+    } catch (err) {
+      console.error('Failed to delete video:', err);
+      alert('שגיאה במחיקת הסרטון: ' + err.message);
+    }
+  };
+
   const navigate = useNavigate();
   const location = useLocation();
   const isPatient = location.pathname.startsWith('/patient');
@@ -207,7 +249,7 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
     setIsUploading(true);
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const noteText = therapistNote.trim() || 'הנחיות ביצוע שנקבעו בקליניקה';
+    const noteText = currentTherapistNote.trim() || 'הנחיות ביצוע שנקבעו בקליניקה';
     const uploadTitle = `הנחיית מטפל - ${exercise.nameHe || exercise.name_he || exercise.name}`;
 
     if (isMockMode) {
@@ -431,6 +473,32 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
                   דגשים: {video.note}
                 </div>
               </div>
+              
+              {/* Delete button (only for therapists) */}
+              {!isPatient && (
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteVideo(video, e)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#EF4444',
+                    cursor: 'pointer',
+                    padding: 'var(--space-1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: 0.8,
+                    transition: 'opacity 0.2s',
+                    flexShrink: 0,
+                    marginLeft: 'var(--space-1)',
+                    zIndex: 5
+                  }}
+                  title="מחק סרטון"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -475,6 +543,32 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
                   </div>
                 )}
               </div>
+              
+              {/* Delete button (for therapists OR the patient who uploaded it) */}
+              {(!isPatient || video.uploadedBy !== 'therapist') && (
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteVideo(video, e)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#EF4444',
+                    cursor: 'pointer',
+                    padding: 'var(--space-1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: 0.8,
+                    transition: 'opacity 0.2s',
+                    flexShrink: 0,
+                    marginLeft: 'var(--space-1)',
+                    zIndex: 5
+                  }}
+                  title="מחק סרטון"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -519,28 +613,19 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
           {/* Camera Buttons Section */}
           <div style={{ direction: 'rtl' }}>
             <label className="text-xxs font-bold text-secondary mb-1 block" style={{ color: 'var(--text-secondary)' }}>📹 צילום והעלאת סרטון הדגמה מהקליניקה:</label>
-            <div className="flex gap-2 mb-2">
-              <input 
-                type="text"
-                className="input input-sm text-xs flex-1"
-                value={therapistNote}
-                onChange={(e) => setTherapistNote(e.target.value)}
-                placeholder="דגשים מיוחדים לסרטון הוידאו..."
-                disabled={isUploading}
-                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', height: '36px' }}
-              />
+            <div className="flex gap-2">
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
+                className="btn flex-1 animate-pulse-subtle"
                 onClick={() => therapistFileInputRef.current?.click()}
                 disabled={isUploading}
                 style={{
                   background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                   color: 'white',
-                  padding: '0 var(--space-3)',
+                  padding: 'var(--space-3) var(--space-2)',
                   fontSize: 'var(--font-size-xs)',
                   fontWeight: 'bold',
-                  borderRadius: 'var(--radius-md)',
+                  borderRadius: 'var(--radius-lg)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -548,12 +633,11 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
                   border: 'none',
                   boxShadow: 'var(--shadow-md)',
                   cursor: 'pointer',
-                  height: '36px',
-                  whiteSpace: 'nowrap'
+                  height: '40px'
                 }}
               >
                 <Video size={15} />
-                {isUploading ? 'מעלה...' : '🎥 צלם/העלה וידאו'}
+                {isUploading ? 'מעלה וידאו...' : '🎥 צלם/העלה וידאו'}
               </button>
             </div>
           </div>

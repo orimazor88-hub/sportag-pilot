@@ -271,6 +271,16 @@ export default function MyExercises() {
     }
   }, [location]);
 
+  useEffect(() => {
+    const handleUploadRefresh = () => {
+      loadExercises();
+    };
+    window.addEventListener('sportag-media-uploaded', handleUploadRefresh);
+    return () => {
+      window.removeEventListener('sportag-media-uploaded', handleUploadRefresh);
+    };
+  }, [user]);
+
   const todayFormatted = new Date().toLocaleDateString('he-IL', {
     weekday: 'long',
     day: 'numeric',
