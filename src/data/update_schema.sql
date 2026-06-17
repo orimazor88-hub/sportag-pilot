@@ -150,4 +150,8 @@ CREATE POLICY "media_therapist_all" ON public.media_uploads FOR ALL USING (
   )
 );
 
+-- 9. Add therapist_note column to exercises table to allow written instructions/notes on specific exercises
+ALTER TABLE public.exercises ADD COLUMN IF NOT EXISTS therapist_note TEXT;
+
+
 

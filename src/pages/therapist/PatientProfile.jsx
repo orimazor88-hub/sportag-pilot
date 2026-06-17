@@ -593,7 +593,8 @@ export default function PatientProfile() {
         frequency: e.frequency,
         difficulty: e.difficulty,
         assignedDate: e.assigned_date,
-        videoUrl: e.video_url
+        videoUrl: e.video_url,
+        therapistNote: e.therapist_note
       }));
 
       // 4. Fetch Journals

@@ -69,7 +69,8 @@ export default function MyExercises() {
         frequency: e.frequency,
         difficulty: e.difficulty,
         assignedDate: e.assigned_date,
-        videoUrl: e.video_url
+        videoUrl: e.video_url,
+        therapistNote: e.therapist_note
       })));
 
       setMediaUploads((dbMedia || []).map(item => ({

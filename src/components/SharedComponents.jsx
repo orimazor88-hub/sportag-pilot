@@ -151,11 +151,43 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
   const [therapistNote, setTherapistNote] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   
+  const [currentTherapistNote, setCurrentTherapistNote] = useState(exercise.therapistNote || '');
+  const [isSavingNote, setIsSavingNote] = useState(false);
+
   const therapistFileInputRef = useRef(null);
 
   useEffect(() => {
     setIsDone(completed);
   }, [completed]);
+
+  useEffect(() => {
+    setCurrentTherapistNote(exercise.therapistNote || '');
+  }, [exercise.therapistNote]);
+
+  const handleSaveTherapistNote = async () => {
+    setIsSavingNote(true);
+    try {
+      if (isMockMode) {
+        exercise.therapistNote = currentTherapistNote;
+        alert('ההערה נשמרה בהצלחה (מצב הדגמה)!');
+      } else {
+        const { error } = await supabase
+          .from('exercises')
+          .update({ therapist_note: currentTherapistNote })
+          .eq('id', exercise.id);
+
+        if (error) throw error;
+        
+        exercise.therapistNote = currentTherapistNote;
+        alert('ההנחיה למטופל נשמרה בהצלחה!');
+      }
+    } catch (err) {
+      console.error('Failed to save therapist note:', err);
+      alert('שגיאה בשמירת ההנחיה: ' + err.message);
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
 
   const handleComplete = () => {
     const nextCompletedVal = !isDone;
@@ -338,6 +370,27 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
         {exercise.description}
       </p>
 
+      {/* Therapist Notes Display */}
+      {exercise.therapistNote && (
+        <div 
+          className="text-xs p-3 rounded-xl animate-fade-in mt-3" 
+          style={{ 
+            background: 'rgba(37, 99, 235, 0.08)', 
+            border: '1px solid rgba(37, 99, 235, 0.2)', 
+            color: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            direction: 'rtl'
+          }}
+        >
+          <span>👨‍⚕️</span>
+          <div>
+            <strong>הנחיית מטפל:</strong> {exercise.therapistNote}
+          </div>
+        </div>
+      )}
+
       {/* Clinic Visit Videos (Demonstrations from therapist) */}
       {clinicVideos.length > 0 && (
         <div className="mt-3 flex flex-col gap-2">
@@ -429,48 +482,78 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
 
       {/* Upload button for therapist */}
       {!isPatient && (
-        <div className="mt-3 flex flex-col gap-3">
-          {/* Note Input */}
+        <div className="mt-4 border-t pt-3 border-color flex flex-col gap-3">
+          {/* Text Note Input */}
           <div style={{ direction: 'rtl' }} className="flex flex-col gap-1">
-            <label className="text-xxs font-bold text-secondary block" style={{ color: 'var(--text-secondary)' }}>הנחיות ודגשים למטופל (יופיעו לצד הוידאו בבית):</label>
-            <input 
-              type="text"
-              className="input input-sm text-xs"
-              value={therapistNote}
-              onChange={(e) => setTherapistNote(e.target.value)}
-              placeholder="דגשים לביצוע, מספר חזרות מומלץ, קצב..."
-              disabled={isUploading}
-              style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', height: '36px' }}
-            />
+            <label className="text-xxs font-bold text-secondary block" style={{ color: 'var(--text-secondary)' }}>📝 הנחיות ודגשים מיוחדים למטופל בבית:</label>
+            <div className="flex gap-2">
+              <input 
+                type="text"
+                className="input input-sm text-xs flex-1"
+                value={currentTherapistNote}
+                onChange={(e) => setCurrentTherapistNote(e.target.value)}
+                placeholder="כתוב הנחיה מיוחדת או דגשים..."
+                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', height: '36px' }}
+              />
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleSaveTherapistNote}
+                disabled={isSavingNote}
+                style={{
+                  padding: '0 var(--space-3)',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Save size={14} />
+                {isSavingNote ? 'שומר...' : 'שמור'}
+              </button>
+            </div>
           </div>
 
           {/* Camera Buttons Section */}
           <div style={{ direction: 'rtl' }}>
-            <label className="text-xxs font-bold text-secondary mb-1 block" style={{ color: 'var(--text-secondary)' }}>צילום והעלאת סרטון הדגמה לשימוש המטופל בבית:</label>
-            <div className="flex gap-2">
+            <label className="text-xxs font-bold text-secondary mb-1 block" style={{ color: 'var(--text-secondary)' }}>📹 צילום והעלאת סרטון הדגמה מהקליניקה:</label>
+            <div className="flex gap-2 mb-2">
+              <input 
+                type="text"
+                className="input input-sm text-xs flex-1"
+                value={therapistNote}
+                onChange={(e) => setTherapistNote(e.target.value)}
+                placeholder="דגשים מיוחדים לסרטון הוידאו..."
+                disabled={isUploading}
+                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', height: '36px' }}
+              />
               <button
                 type="button"
-                className="btn flex-1 animate-pulse-subtle"
+                className="btn btn-primary btn-sm"
                 onClick={() => therapistFileInputRef.current?.click()}
                 disabled={isUploading}
                 style={{
                   background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                   color: 'white',
-                  padding: 'var(--space-3) var(--space-2)',
+                  padding: '0 var(--space-3)',
                   fontSize: 'var(--font-size-xs)',
                   fontWeight: 'bold',
-                  borderRadius: 'var(--radius-lg)',
+                  borderRadius: 'var(--radius-md)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
                   border: 'none',
                   boxShadow: 'var(--shadow-md)',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  height: '36px',
+                  whiteSpace: 'nowrap'
                 }}
               >
                 <Video size={15} />
-                {isUploading ? 'מעלה וידאו...' : '🎥 צלם/העלה וידאו'}
+                {isUploading ? 'מעלה...' : '🎥 צלם/העלה וידאו'}
               </button>
             </div>
           </div>
@@ -574,43 +657,45 @@ export function ExerciseCard({ exercise, onComplete, completed = false, customUp
       )}
 
       {/* Action Buttons */}
-      <div className="flex gap-2 mt-4">
-        <button
-          className={`btn ${isDone ? 'btn-success' : 'btn-ghost'} flex-1`}
-          onClick={handleComplete}
-          style={{
-            padding: 'var(--space-3) var(--space-4)',
-            fontSize: 'var(--font-size-sm)',
-            border: isDone ? 'none' : '2px solid var(--color-success)',
-            color: isDone ? 'white' : 'var(--color-success)',
-          }}
-        >
-          <CheckCircle size={18} />
-          {isDone ? 'בוצע! ✓' : 'סמן כבוצע'}
-        </button>
-
-        {latestClinicVideo && (
+      {isPatient && (
+        <div className="flex gap-2 mt-4">
           <button
-            className="btn flex-1"
-            onClick={() => setActiveMedia(latestClinicVideo)}
+            className={`btn ${isDone ? 'btn-success' : 'btn-ghost'} flex-1`}
+            onClick={handleComplete}
             style={{
               padding: 'var(--space-3) var(--space-4)',
               fontSize: 'var(--font-size-sm)',
-              background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-teal) 100%)',
-              color: 'white',
-              border: 'none',
-              boxShadow: 'var(--shadow-sm)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px'
+              border: isDone ? 'none' : '2px solid var(--color-success)',
+              color: isDone ? 'white' : 'var(--color-success)',
             }}
           >
-            <Play size={16} />
-            הפעל סרטון תרגול
+            <CheckCircle size={18} />
+            {isDone ? 'בוצע! ✓' : 'סמן כבוצע'}
           </button>
-        )}
-      </div>
+
+          {latestClinicVideo && (
+            <button
+              className="btn flex-1"
+              onClick={() => setActiveMedia(latestClinicVideo)}
+              style={{
+                padding: 'var(--space-3) var(--space-4)',
+                fontSize: 'var(--font-size-sm)',
+                background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-teal) 100%)',
+                color: 'white',
+                border: 'none',
+                boxShadow: 'var(--shadow-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              <Play size={16} />
+              הפעל סרטון תרגול
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Lightbox Media Viewer Modal inside ExerciseCard */}
       {activeMedia && (
