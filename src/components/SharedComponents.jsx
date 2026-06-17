@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabaseClient';
 import {
   Shield, Mic, X, CheckCircle, AlertTriangle,
-  ChevronLeft, ChevronRight, Search, Play, Camera, Video, Save
+  ChevronLeft, ChevronRight, Search, Play, Camera, Video, Save, Trash2
 } from 'lucide-react';
 
 // --- Pain Scale ---
