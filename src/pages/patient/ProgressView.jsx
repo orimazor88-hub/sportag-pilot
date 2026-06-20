@@ -142,11 +142,11 @@ export default function ProgressView() {
         },
         metricsHistory: formattedJournals.length > 0 ? formattedJournals.map(j => ({
           date: j.date,
-          rom: j.rom || (profile.is_lower_limb ? 130 : 160),
-          strength: j.strength || 4,
-          walking: j.walkingScore || 7,
-          stairs: j.stairsScore || 7,
-          running: j.runningScore || 5
+          rom: j.rom || null,
+          strength: j.strength || null,
+          walking: j.walkingScore || null,
+          stairs: j.stairsScore || null,
+          running: j.runningScore || null
         })).reverse() : [{
           date: new Date().toISOString().slice(0, 10),
           rom: profile.is_lower_limb ? 120 : 150,
@@ -250,6 +250,18 @@ export default function ProgressView() {
     ? patient.metricsHistory[0]
     : null;
 
+  const getFirstNonNull = (history, key, fallback) => {
+    if (!history) return fallback;
+    const entry = history.find(m => m[key] !== null && m[key] !== undefined);
+    return entry ? entry[key] : fallback;
+  };
+
+  const getLatestNonNull = (history, key, fallback) => {
+    if (!history) return fallback;
+    const entry = [...history].reverse().find(m => m[key] !== null && m[key] !== undefined);
+    return entry ? entry[key] : fallback;
+  };
+
   const calcMetricProgress = (current, initial, target) => {
     if (initial === undefined || current === undefined || target === undefined || initial === target) return 100;
     const progress = ((current - initial) / (target - initial)) * 100;
@@ -276,8 +288,8 @@ export default function ProgressView() {
     key: 'pain'
   });
 
-  const currentRom = latestMetric?.rom || 120;
-  const initRom = firstMetric?.rom || 110;
+  const initRom = getFirstNonNull(patient.metricsHistory, 'rom', 110);
+  const currentRom = getLatestNonNull(patient.metricsHistory, 'rom', initRom);
   const romTarget = targets.rom?.intermediate ?? 130;
 
   activeMetrics.push({
@@ -289,8 +301,8 @@ export default function ProgressView() {
     key: 'rom'
   });
 
-  const currentStr = latestMetric?.strength || 3;
-  const initStr = firstMetric?.strength || 3;
+  const initStr = getFirstNonNull(patient.metricsHistory, 'strength', 3);
+  const currentStr = getLatestNonNull(patient.metricsHistory, 'strength', initStr);
   const strTarget = targets.strength?.intermediate ?? 4.5;
 
   activeMetrics.push({
@@ -303,8 +315,8 @@ export default function ProgressView() {
   });
 
   if (patient.isLowerLimb) {
-    const currentWalk = latestMetric?.walking || 5;
-    const initWalk = firstMetric?.walking || 5;
+    const initWalk = getFirstNonNull(patient.metricsHistory, 'walking', 5);
+    const currentWalk = getLatestNonNull(patient.metricsHistory, 'walking', initWalk);
     const walkTarget = targets.walking?.intermediate ?? 8;
     activeMetrics.push({
       name: 'הליכה',
@@ -315,8 +327,8 @@ export default function ProgressView() {
       key: 'walking'
     });
 
-    const currentStairs = latestMetric?.stairs || 4;
-    const initStairs = firstMetric?.stairs || 4;
+    const initStairs = getFirstNonNull(patient.metricsHistory, 'stairs', 4);
+    const currentStairs = getLatestNonNull(patient.metricsHistory, 'stairs', initStairs);
     const stairsTarget = targets.stairs?.intermediate ?? 8;
     activeMetrics.push({
       name: 'מדרגות',
@@ -327,8 +339,8 @@ export default function ProgressView() {
       key: 'stairs'
     });
 
-    const currentRun = latestMetric?.running || 2;
-    const initRun = firstMetric?.running || 2;
+    const initRun = getFirstNonNull(patient.metricsHistory, 'running', 2);
+    const currentRun = getLatestNonNull(patient.metricsHistory, 'running', initRun);
     const runTarget = targets.running?.intermediate ?? 6;
     activeMetrics.push({
       name: 'ריצה',
@@ -479,14 +491,44 @@ export default function ProgressView() {
                 </tr>
               </thead>
               <tbody>
-                {activeMetrics.map((m, idx) => {
+                {/* קבוצה 1: מדידות קליניות */}
+                <tr style={{ background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid var(--border-color)' }}>
+                  <td colSpan="5" style={{ padding: 'var(--space-2) var(--space-3)', fontWeight: 'bold', color: 'var(--color-primary-light)' }}>
+                    מדידות קליניות מהמטפל
+                  </td>
+                </tr>
+                {activeMetrics.filter(m => m.key === 'rom' || m.key === 'strength').map((m, idx) => {
                   const status = getStatus(m);
                   return (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: 'var(--space-3)', fontWeight: 600 }}>{m.name}</td>
+                    <tr key={`clinical-${idx}`} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: 'var(--space-3)', fontWeight: 600, paddingRight: 'var(--space-6)' }}>{m.name}</td>
                       <td style={{ padding: 'var(--space-3)' }}>{m.initial}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
                       <td style={{ padding: 'var(--space-3)', color: 'var(--text-primary)', fontWeight: 600 }}>{m.current}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
                       <td style={{ padding: 'var(--space-3)', color: '#06B6D4' }}>{m.target}{m.key === 'rom' ? '°' : m.key === 'strength' ? '/5' : ''}</td>
+                      <td style={{ padding: 'var(--space-3)' }}>
+                        <span className={`badge ${status.badgeClass}`}>
+                          <span style={{ marginLeft: 4 }}>{status.dot}</span>
+                          <span>{status.label}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {/* קבוצה 2: מדדי תפקוד יומיים */}
+                <tr style={{ background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid var(--border-color)' }}>
+                  <td colSpan="5" style={{ padding: 'var(--space-2) var(--space-3)', fontWeight: 'bold', color: 'var(--color-teal-light)' }}>
+                    מדדי תפקוד יומיים שלי
+                  </td>
+                </tr>
+                {activeMetrics.filter(m => m.key !== 'rom' && m.key !== 'strength').map((m, idx) => {
+                  const status = getStatus(m);
+                  return (
+                    <tr key={`daily-${idx}`} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: 'var(--space-3)', fontWeight: 600, paddingRight: 'var(--space-6)' }}>{m.name}</td>
+                      <td style={{ padding: 'var(--space-3)' }}>{m.initial}</td>
+                      <td style={{ padding: 'var(--space-3)', color: 'var(--text-primary)', fontWeight: 600 }}>{m.current}</td>
+                      <td style={{ padding: 'var(--space-3)', color: '#06B6D4' }}>{m.target}</td>
                       <td style={{ padding: 'var(--space-3)' }}>
                         <span className={`badge ${status.badgeClass}`}>
                           <span style={{ marginLeft: 4 }}>{status.dot}</span>
@@ -523,7 +565,7 @@ export default function ProgressView() {
 
       {/* Pain Chart */}
       <div id="pain-section" className="card mb-4 animate-fade-in-up stagger-2">
-        <h3 className="section-title">מגמת כאב</h3>
+        <h3 className="section-title">מגמת כאב ואנרגיה - דיווח יומי</h3>
         <div style={{ width: '100%', height: 220 }}>
           <ResponsiveContainer>
             <AreaChart data={painData}>
@@ -567,7 +609,7 @@ export default function ProgressView() {
         <div className="grid-2 mb-4 animate-fade-in-up stagger-3">
           {/* ROM Progress */}
           <div className="card">
-            <h3 className="section-title text-sm" style={{ color: '#06B6D4' }}>טווח תנועה (ROM)</h3>
+            <h3 className="section-title text-sm" style={{ color: '#06B6D4' }}>טווח תנועה (ROM) - מדידה קלינית</h3>
             <div style={{ width: '100%', height: 160 }}>
               <ResponsiveContainer>
                 <LineChart data={metricsData}>
@@ -579,7 +621,7 @@ export default function ProgressView() {
                       borderRadius: 8, color: 'var(--text-primary)', direction: 'rtl',
                     }}
                   />
-                  <Line type="monotone" dataKey="rom" stroke="#06B6D4" strokeWidth={2.5} dot={{ r: 4 }} name="ROM" />
+                  <Line type="monotone" dataKey="rom" stroke="#06B6D4" strokeWidth={2.5} dot={{ r: 4 }} name="ROM" connectNulls={true} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -587,7 +629,7 @@ export default function ProgressView() {
 
           {/* Muscle Strength Progress */}
           <div className="card">
-            <h3 className="section-title text-sm" style={{ color: '#8B5CF6' }}>כוח שריר</h3>
+            <h3 className="section-title text-sm" style={{ color: '#8B5CF6' }}>כוח שריר (MRC) - מדידה קלינית</h3>
             <div style={{ width: '100%', height: 160 }}>
               <ResponsiveContainer>
                 <LineChart data={metricsData}>
@@ -599,7 +641,7 @@ export default function ProgressView() {
                       borderRadius: 8, color: 'var(--text-primary)', direction: 'rtl',
                     }}
                   />
-                  <Line type="monotone" dataKey="strength" stroke="#8B5CF6" strokeWidth={2.5} dot={{ r: 4 }} name="כוח שריר" />
+                  <Line type="monotone" dataKey="strength" stroke="#8B5CF6" strokeWidth={2.5} dot={{ r: 4 }} name="כוח שריר" connectNulls={true} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -610,7 +652,7 @@ export default function ProgressView() {
       {/* Lower Limb Clinical Metrics Progress */}
       {patient.isLowerLimb && metricsData.length > 0 && (
         <div className="card mb-4 animate-fade-in-up stagger-3">
-          <h3 className="section-title" style={{ color: '#10B981' }}>מדדי תפקוד גפה תחתונה (הערכת מטפל)</h3>
+          <h3 className="section-title" style={{ color: '#10B981' }}>מדדי תפקוד גפה תחתונה (0-10) - דיווח יומי</h3>
           <div style={{ width: '100%', height: 180 }}>
             <ResponsiveContainer>
               <LineChart data={metricsData}>

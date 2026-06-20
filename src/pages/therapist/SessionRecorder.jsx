@@ -363,6 +363,8 @@ export default function SessionRecorder() {
               walking_score: selectedPatient.isLowerLimb ? Number(walking) : null,
               stairs_score: selectedPatient.isLowerLimb ? Number(stairs) : null,
               running_score: selectedPatient.isLowerLimb ? Number(running) : null,
+              rom: Number(rom),
+              strength: Number(strength),
             });
           if (journError) throw journError;
 
